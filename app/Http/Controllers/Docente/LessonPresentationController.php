@@ -83,6 +83,73 @@ class LessonPresentationController extends Controller
             ->with('success', 'Correzione avviata. Le slide saranno aggiornate a breve.');
     }
 
+    /**
+     * S3 — carica una propria versione .pptx (sostituisce quella corrente).
+     * source='uploaded', spec=null (niente correzione via prompt). Render
+     * immediato per contare le slide e pre-scaldare l'anteprima; invalida i derivati.
+     */
+    public function upload(Request $request, Lesson $lesson, SlidePreviewService $preview)
+    {
+        $this->authorizeOwner($lesson);
+        $request->validate([
+            'presentation' => ['required', 'file', 'extensions:pptx',
+                'mimetypes:application/vnd.openxmlformats-officedocument.presentationml.presentation,application/zip',
+                'max:51200'], // 50 MB
+        ]);
+
+        $presentation = $this->presentationFor($lesson);
+        $storagePath = "lesson-presentations/{$lesson->id}/{$presentation->id}.pptx";
+
+        // Sostituzione: via la vecchia anteprima e l'eventuale vecchio file.
+        $preview->forget($presentation->file_path ?? $storagePath);
+        $request->file('presentation')->storeAs(dirname($storagePath), basename($storagePath), 'local');
+
+        $slides = $this->slideCount($preview, $storagePath);
+        $presentation->update([
+            'file_path' => $storagePath,
+            'status' => 'ready',
+            'source' => 'uploaded',
+            'spec' => null, // caricata: non correggibile via prompt
+            'generation_meta' => [
+                'uploaded_by' => session('student_id'),
+                'original_filename' => $request->file('presentation')->getClientOriginalName(),
+                'uploaded_at' => now()->toIso8601String(),
+                'slides' => $slides,
+            ],
+        ]);
+
+        return redirect()->route('docente.lessons.show', $lesson)
+            ->with('success', 'Presentazione caricata.');
+    }
+
+    /** S3 — elimina la presentazione: record + .pptx + cache anteprima + derivati. */
+    public function destroy(Lesson $lesson, SlidePreviewService $preview)
+    {
+        $this->authorizeOwner($lesson);
+        $presentation = $lesson->presentations()->latest()->first();
+        abort_unless($presentation, 404);
+
+        if ($presentation->file_path) {
+            $preview->purge($presentation->file_path);
+            Storage::disk('local')->delete($presentation->file_path);
+        }
+        // GANCIO feature video: qui andranno eliminati i derivati video/audio.
+        $presentation->delete();
+
+        return redirect()->route('docente.lessons.show', $lesson)
+            ->with('success', 'Presentazione eliminata.');
+    }
+
+    /** Conta le slide rendendo l'anteprima; 0 se il render fallisce (download resta ok). */
+    private function slideCount(SlidePreviewService $preview, string $storagePath): int
+    {
+        try {
+            return count($preview->imagesFor($storagePath));
+        } catch (\Throwable $e) {
+            return 0;
+        }
+    }
+
     public function status(Lesson $lesson)
     {
         $this->authorizeOwner($lesson);

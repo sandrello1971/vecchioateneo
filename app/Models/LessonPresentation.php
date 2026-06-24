@@ -12,7 +12,7 @@ class LessonPresentation extends Model
     use HasFactory, HasUuids;
 
     protected $fillable = [
-        'lesson_id', 'file_path', 'status', 'generation_meta', 'spec',
+        'lesson_id', 'file_path', 'status', 'source', 'generation_meta', 'spec',
     ];
 
     protected $casts = [

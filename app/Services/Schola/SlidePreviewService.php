@@ -76,6 +76,14 @@ class SlidePreviewService
         }
     }
 
+    /**
+     * Rimuove l'intera cartella di cache dei PNG (S3: cancellazione presentazione).
+     */
+    public function purge(string $pptxRelPath): void
+    {
+        Storage::disk(self::DISK)->deleteDirectory($this->cacheDir($pptxRelPath));
+    }
+
     /** Directory di cache dei PNG: il path del .pptx senza estensione. */
     private function cacheDir(string $pptxRelPath): string
     {

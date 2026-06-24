@@ -165,6 +165,9 @@
         @if(($presentation?->status ?? null) === 'ready' && ($presentation->generation_meta['slides'] ?? null))
             <div style="margin-top:6px; font-size:0.75rem; color:#8A9696;">{{ $presentation->generation_meta['slides'] }} slide @isset($presentation->generation_meta['model']) · {{ $presentation->generation_meta['model'] }} @endisset</div>
         @endif
+        @if(($presentation->source ?? 'generated') === 'uploaded')
+            <div style="margin-top:6px;"><span style="display:inline-block; padding:2px 8px; background:#EEF3F3; color:#3A8C89; border-radius:6px; font-size:0.72rem; font-weight:700;">Versione caricata</span></div>
+        @endif
 
         {{-- x-show sul wrapper esterno: NON deve stare sul contenitore flex, perché
              Alpine (x-show) rimuove la proprietà `display` inline quando mostra,
@@ -182,6 +185,24 @@
                       onsubmit="return confirm('Rigenerare la presentazione? Il file attuale verrà sovrascritto.');">
                     @csrf
                     <button data-busy-label="Rigenerazione…" style="padding:9px 16px; background:white; color:#E28A53; border:1px solid #E28A53; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">Rigenera</button>
+                </form>
+            @endif
+
+            {{-- S3 — carica una propria versione .pptx (sostituisce quella corrente) --}}
+            <form method="POST" action="{{ route('docente.lessons.presentation.upload', $lesson) }}" enctype="multipart/form-data"
+                  style="display:inline-flex; align-items:center; gap:6px;"
+                  onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Caricamento…';">
+                @csrf
+                <input type="file" name="presentation" accept=".pptx" required style="font-size:0.78rem; max-width:190px;">
+                <button style="padding:9px 14px; background:white; color:#3A8C89; border:1px solid #3A8C89; border-radius:8px; font-size:0.82rem; font-weight:600; cursor:pointer;">Carica .pptx</button>
+            </form>
+
+            {{-- S3 — elimina la presentazione (azione distruttiva, conferma esplicita) --}}
+            @if($presentation && $presentation->status !== 'pending')
+                <form method="POST" action="{{ route('docente.lessons.presentation.destroy', $lesson) }}"
+                      onsubmit="return confirm('Eliminare la presentazione? Operazione non reversibile.') && (this.querySelector('button').disabled=true || true);">
+                    @csrf @method('DELETE')
+                    <button style="padding:9px 14px; background:white; color:#A8521F; border:1px solid #A8521F; border-radius:8px; font-size:0.82rem; font-weight:600; cursor:pointer;">Elimina</button>
                 </form>
             @endif
         </div>

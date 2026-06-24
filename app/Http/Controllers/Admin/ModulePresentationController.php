@@ -81,6 +81,70 @@ class ModulePresentationController extends Controller
         return back()->with('success', 'Correzione avviata. Le slide saranno aggiornate a breve.');
     }
 
+    /**
+     * S3 — carica una propria versione .pptx del modulo (sostituisce quella
+     * corrente). UNIQUE(module_id) rispettato: firstOrCreate aggiorna l'unico record.
+     * source='uploaded', spec=null. Render immediato per contare le slide; invalida derivati.
+     */
+    public function upload(Request $request, Course $course, Module $module, SlidePreviewService $preview)
+    {
+        $this->ensureInCourse($course, $module);
+        $request->validate([
+            'presentation' => ['required', 'file', 'extensions:pptx',
+                'mimetypes:application/vnd.openxmlformats-officedocument.presentationml.presentation,application/zip',
+                'max:51200'], // 50 MB
+        ]);
+
+        $presentation = $this->presentationFor($module);
+        $storagePath = "module-presentations/{$module->id}/{$presentation->id}.pptx";
+
+        $preview->forget($presentation->file_path ?? $storagePath);
+        $request->file('presentation')->storeAs(dirname($storagePath), basename($storagePath), 'local');
+
+        $slides = $this->slideCount($preview, $storagePath);
+        $presentation->update([
+            'file_path' => $storagePath,
+            'status' => 'ready',
+            'source' => 'uploaded',
+            'spec' => null,
+            'generation_meta' => [
+                'uploaded_by' => session('admin_email'),
+                'original_filename' => $request->file('presentation')->getClientOriginalName(),
+                'uploaded_at' => now()->toIso8601String(),
+                'slides' => $slides,
+            ],
+        ]);
+
+        return back()->with('success', 'Presentazione caricata.');
+    }
+
+    /** S3 — elimina la presentazione del modulo: record + .pptx + cache + derivati. */
+    public function destroy(Course $course, Module $module, SlidePreviewService $preview)
+    {
+        $this->ensureInCourse($course, $module);
+        $presentation = $module->presentation()->first();
+        abort_unless($presentation, 404);
+
+        if ($presentation->file_path) {
+            $preview->purge($presentation->file_path);
+            Storage::disk('local')->delete($presentation->file_path);
+        }
+        // GANCIO feature video: qui andranno eliminati i derivati video/audio.
+        $presentation->delete();
+
+        return back()->with('success', 'Presentazione eliminata.');
+    }
+
+    /** Conta le slide rendendo l'anteprima; 0 se il render fallisce (download resta ok). */
+    private function slideCount(SlidePreviewService $preview, string $storagePath): int
+    {
+        try {
+            return count($preview->imagesFor($storagePath));
+        } catch (\Throwable $e) {
+            return 0;
+        }
+    }
+
     public function status(Course $course, Module $module)
     {
         $this->ensureInCourse($course, $module);
