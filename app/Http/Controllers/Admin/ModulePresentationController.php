@@ -1,0 +1,82 @@
+<?php
+
+namespace App\Http\Controllers\Admin;
+
+use App\Http\Controllers\Controller;
+use App\Jobs\GenerateModulePresentationJob;
+use App\Models\Course;
+use App\Models\Module;
+use App\Models\ModulePresentation;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
+// Presentazione .pptx di un MODULO di corso Officina (P28): generazione/
+// rigenerazione/stato/download lato admin. Gemello di Docente\LessonPresentationController.
+// File da storage PRIVATO (mai URL diretto). Una presentazione per modulo
+// (rigenera = sovrascrive). Auth: gruppo admin (admin.auth).
+class ModulePresentationController extends Controller
+{
+    private function ensureInCourse(Course $course, Module $module): void
+    {
+        abort_unless($module->course_id === $course->id, 404);
+    }
+
+    /** Riga presentazione del modulo (singola, riusata su rigenerazione). */
+    private function presentationFor(Module $module): ModulePresentation
+    {
+        return ModulePresentation::firstOrCreate(
+            ['module_id' => $module->id],
+            ['status' => 'pending']
+        );
+    }
+
+    public function generate(Course $course, Module $module)
+    {
+        $this->ensureInCourse($course, $module);
+        abort_unless(trim((string) $module->content) !== '', 422,
+            'Aggiungi prima il contenuto del modulo: la presentazione si genera dal corpo del modulo.');
+
+        $presentation = $this->presentationFor($module);
+
+        // Anti-doppio-submit (server): già in corso → non ridispatcha.
+        if ($presentation->status === 'generating') {
+            return back()->with('success', 'Generazione presentazione già in corso.');
+        }
+
+        $presentation->update(['status' => 'generating']);
+        GenerateModulePresentationJob::dispatch($presentation->id)->afterResponse();
+
+        return back()->with('success', 'Generazione presentazione avviata. Sarà pronta a breve.');
+    }
+
+    /** Rigenera: sovrascrive la presentazione esistente (conferma lato UI). */
+    public function regenerate(Course $course, Module $module)
+    {
+        return $this->generate($course, $module);
+    }
+
+    public function status(Course $course, Module $module)
+    {
+        $this->ensureInCourse($course, $module);
+        $presentation = $module->presentation()->first();
+
+        return response()->json([
+            'status' => $presentation?->status ?? 'none',
+            'failure_reason' => $presentation?->generation_meta['failure_reason'] ?? null,
+        ]);
+    }
+
+    public function download(Course $course, Module $module)
+    {
+        $this->ensureInCourse($course, $module);
+        $presentation = $module->presentation()->where('status', 'ready')->first();
+
+        abort_unless($presentation && $presentation->file_path
+            && Storage::disk('local')->exists($presentation->file_path), 404);
+
+        $filename = $presentation->generation_meta['filename'] ?? (Str::slug($module->title) . '.pptx');
+
+        // SOLO via controller: storage privato, mai URL diretto.
+        return response()->download(Storage::disk('local')->path($presentation->file_path), $filename);
+    }
+}

@@ -1,0 +1,144 @@
+/*
+ * Landing pubblica GLITCH (P24) — bundle isolato dall'app interna.
+ * Font self-hosted via @fontsource: i woff2 vengono inclusi nel build Vite
+ * (public/build), nessuna risorsa da CDN esterni. Sottoinsieme "latin":
+ * copre gli accenti italiani (à è é ì ò ù, entro U+00FF).
+ */
+@import '@fontsource/playfair-display/latin-400.css';
+@import '@fontsource/playfair-display/latin-700.css';
+@import '@fontsource/playfair-display/latin-900.css';
+@import '@fontsource/jetbrains-mono/latin-400.css';
+@import '@fontsource/jetbrains-mono/latin-500.css';
+@import '@fontsource/jetbrains-mono/latin-700.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    html {
+        scroll-behavior: smooth;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        html {
+            scroll-behavior: auto;
+        }
+    }
+
+    body {
+        background-color: theme('colors.glitch.black');
+        color: theme('colors.glitch.ivory');
+        font-family: theme('fontFamily.mono');
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+    }
+
+    /* Focus visibile su tutta la landing (accessibilità). */
+    a:focus-visible,
+    button:focus-visible {
+        outline: 2px solid theme('colors.glitch.red');
+        outline-offset: 4px;
+        border-radius: 1px;
+    }
+}
+
+@layer components {
+    /* Frase manifesto: serif display gigante, scala con la viewport e
+       resta leggibile a 360px (minimo 2.6rem). */
+    .glitch-manifesto {
+        font-family: theme('fontFamily.display');
+        font-weight: 900;
+        line-height: 0.98;
+        letter-spacing: -0.02em;
+        font-size: clamp(2.6rem, 10.5vw, 7.5rem);
+    }
+
+    /* Numerale serif rosso oversize delle sezioni (01, 02, 03). */
+    .glitch-numeral {
+        font-family: theme('fontFamily.display');
+        font-weight: 900;
+        color: theme('colors.glitch.red');
+        line-height: 0.85;
+        letter-spacing: -0.03em;
+        font-size: clamp(3.5rem, 13vw, 8rem);
+    }
+
+    /* Titolo di sezione serif ad alto contrasto. */
+    .glitch-section-title {
+        font-family: theme('fontFamily.display');
+        font-weight: 700;
+        line-height: 1.02;
+        letter-spacing: -0.01em;
+        font-size: clamp(1.85rem, 5vw, 3rem);
+    }
+
+    /* Callout: maiuscolo rosso con barra verticale rossa a sinistra. */
+    .glitch-callout {
+        font-family: theme('fontFamily.display');
+        font-weight: 700;
+        color: theme('colors.glitch.red');
+        text-transform: uppercase;
+        line-height: 1.08;
+        letter-spacing: 0.01em;
+        border-left: 4px solid theme('colors.glitch.red');
+        font-size: clamp(1.5rem, 4.5vw, 2.75rem);
+    }
+
+    /* Voci di navigazione: monospace maiuscolo, letter-spacing largo. */
+    .glitch-navlink {
+        font-family: theme('fontFamily.mono');
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        font-size: 0.7rem;
+        font-weight: 500;
+        text-underline-offset: 6px;
+    }
+
+    .glitch-navlink:hover,
+    .glitch-navlink[aria-current='page'] {
+        text-decoration: underline;
+        text-decoration-color: theme('colors.glitch.red');
+        text-decoration-thickness: 2px;
+    }
+
+    /* Tag/etichetta in monospace rosso con tracking largo. */
+    .glitch-tag {
+        font-family: theme('fontFamily.mono');
+        text-transform: uppercase;
+        letter-spacing: 0.22em;
+        font-size: 0.7rem;
+        font-weight: 500;
+        color: theme('colors.glitch.red');
+    }
+
+    /* CTA principale: bordo rosso, riempimento all'hover. */
+    .glitch-cta {
+        font-family: theme('fontFamily.mono');
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        font-size: 0.8rem;
+        font-weight: 700;
+        color: theme('colors.glitch.ivory');
+        border: 2px solid theme('colors.glitch.red');
+        transition: background-color 150ms ease, color 150ms ease;
+    }
+
+    .glitch-cta:hover {
+        background-color: theme('colors.glitch.red');
+        color: theme('colors.glitch.black');
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .glitch-cta {
+            transition: none;
+        }
+    }
+
+    /* Corpo testo monospace, interlinea generosa. */
+    .glitch-body {
+        font-family: theme('fontFamily.mono');
+        line-height: 1.85;
+        font-size: clamp(0.95rem, 1.6vw, 1.1rem);
+    }
+}
