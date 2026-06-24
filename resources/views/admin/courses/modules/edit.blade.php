@@ -348,21 +348,13 @@
             </div>
         @endif
 
-        {{-- S1 — anteprima slide: PNG renderizzati on-demand (lazy), serviti da
-             controller (storage privato). Gemella della galleria docente. --}}
+        {{-- S1 — anteprima slide (galleria + lightbox). Gemella della galleria docente:
+             stesso componente, stesso endpoint preview (storage privato). --}}
         @if(($modPres?->status ?? null) === 'ready' && ($modPres->generation_meta['slides'] ?? 0) > 0)
+            @php $slideUrls = array_map(fn ($i) => route('admin.courses.modules.presentation.preview', [$course, $module, $i]), range(1, (int) $modPres->generation_meta['slides'])); @endphp
             <div style="margin-top:16px; border-top:1px solid #F0F2F2; padding-top:14px;">
                 <div style="font-size:0.72rem; font-weight:700; color:#8A9696; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">Anteprima slide</div>
-                <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px;">
-                    @for($i = 1; $i <= (int) $modPres->generation_meta['slides']; $i++)
-                        <figure style="margin:0; border:1px solid #C8D0D0; border-radius:8px; overflow:hidden; background:#F4F1EA;">
-                            <img src="{{ route('admin.courses.modules.presentation.preview', [$course, $module, $i]) }}"
-                                 alt="Slide {{ $i }}" loading="lazy"
-                                 style="display:block; width:100%; height:auto; aspect-ratio:16/9; object-fit:contain; background:#0A0A0A;">
-                            <figcaption style="padding:5px 8px; font-size:0.72rem; color:#8A9696;">Slide {{ $i }}</figcaption>
-                        </figure>
-                    @endfor
-                </div>
+                <x-slide-lightbox :images="$slideUrls" />
             </div>
         @endif
 
