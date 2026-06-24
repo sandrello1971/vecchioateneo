@@ -13,11 +13,12 @@ class ModulePresentation extends Model
     use HasFactory, HasUuids;
 
     protected $fillable = [
-        'module_id', 'file_path', 'status', 'generation_meta',
+        'module_id', 'file_path', 'status', 'generation_meta', 'spec',
     ];
 
     protected $casts = [
         'generation_meta' => 'array',
+        'spec' => 'array',
     ];
 
     public function module()

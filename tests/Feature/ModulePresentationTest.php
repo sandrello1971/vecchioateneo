@@ -110,6 +110,12 @@ class ModulePresentationTest extends TestCase
         Storage::disk('local')->assertExists($result['file_path']);
         $this->assertSame(3, $result['meta']['slides']); // cover + 2
 
+        // S0: buildFrom restituisce la spec COMPLETA (cover + slides + theme) per la persistenza.
+        $this->assertArrayHasKey('spec', $result);
+        $this->assertSame('cover', $result['spec']['slides'][0]['layout']);
+        $this->assertCount(3, $result['spec']['slides']);
+        $this->assertArrayHasKey('theme', $result['spec']);
+
         // tema GLITCH applicato (forPlatform: nessun brand_profile → default GLITCH)
         $zip = new ZipArchive();
         $zip->open(Storage::disk('local')->path($result['file_path']));

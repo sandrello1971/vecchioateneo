@@ -47,6 +47,7 @@ class GenerateLessonPresentationJob implements ShouldQueue
                 'file_path' => $result['file_path'],
                 'status' => 'ready',
                 'generation_meta' => $result['meta'],
+                'spec' => $result['spec'] ?? null, // S0: spec persistita per la correzione via prompt
             ]);
         } catch (Throwable $e) {
             Log::warning('[schola] generazione presentazione fallita', [

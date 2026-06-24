@@ -38,7 +38,7 @@ class LessonPresentationService
     /**
      * Costruisce il .pptx per una presentazione di lezione.
      *
-     * @return array{file_path: string, meta: array}
+     * @return array{file_path: string, meta: array, spec: array}
      */
     public function build(LessonPresentation $presentation): array
     {
@@ -79,7 +79,7 @@ class LessonPresentationService
      * Costruisce il .pptx per un MODULO di corso Officina (P28).
      * Sorgente = module.content; brand = piattaforma (GLITCH), i corsi non hanno scuola.
      *
-     * @return array{file_path: string, meta: array}
+     * @return array{file_path: string, meta: array, spec: array}
      */
     public function buildForModule(ModulePresentation $presentation): array
     {
@@ -117,7 +117,7 @@ class LessonPresentationService
      * Il cuore (generateSpec/buildSpec/normalizeSlides/renderPptx) non cambia.
      *
      * @param array<string, mixed> $specOptions opzioni per generateSpec (subject, log_context)
-     * @return array{file_path: string, meta: array}
+     * @return array{file_path: string, meta: array, spec: array}
      */
     public function buildFrom(string $content, string $title, ?string $subtitle, string $schoolName, ResolvedTheme $theme, string $storagePath, array $specOptions = []): array
     {
@@ -142,6 +142,9 @@ class LessonPresentationService
                 'prompt_version' => self::PROMPT_VERSION,
                 'filename' => Str::slug($title) . '.pptx',
             ]),
+            // S0: la spec COMPLETA usata per il render (cover + slides + theme),
+            // persistita dal chiamante per abilitare la correzione via prompt (S2).
+            'spec' => $spec,
         ];
     }
 
