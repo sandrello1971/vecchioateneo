@@ -263,6 +263,7 @@ Route::prefix('docente')->name('docente.')->middleware(['student.auth', 'profess
     Route::post('/lezioni/{lesson}/presentazione/rigenera', [App\Http\Controllers\Docente\LessonPresentationController::class, 'regenerate'])->name('lessons.presentation.regenerate')->middleware('throttle:schola-generate');
     Route::get('/lezioni/{lesson}/presentazione/stato', [App\Http\Controllers\Docente\LessonPresentationController::class, 'status'])->name('lessons.presentation.status');
     Route::get('/lezioni/{lesson}/presentazione/download', [App\Http\Controllers\Docente\LessonPresentationController::class, 'download'])->name('lessons.presentation.download');
+    Route::get('/lezioni/{lesson}/presentazione/slide/{n}', [App\Http\Controllers\Docente\LessonPresentationController::class, 'previewImage'])->whereNumber('n')->name('lessons.presentation.preview');
 
     // Pubblicazione lezione su classe (P20a) — cattedra/proprietà + ingestion RAG asincrona
     Route::post('/lezioni/{lesson}/pubblica', [App\Http\Controllers\Docente\LessonPublicationController::class, 'store'])->name('lessons.publish');
@@ -381,6 +382,7 @@ Route::prefix('admin')->name('admin.')->middleware(['admin.auth'])->group(functi
     Route::post('courses/{course}/modules/{module}/presentation/regenerate', [App\Http\Controllers\Admin\ModulePresentationController::class, 'regenerate'])->name('courses.modules.presentation.regenerate');
     Route::get('courses/{course}/modules/{module}/presentation/status', [App\Http\Controllers\Admin\ModulePresentationController::class, 'status'])->name('courses.modules.presentation.status');
     Route::get('courses/{course}/modules/{module}/presentation/download', [App\Http\Controllers\Admin\ModulePresentationController::class, 'download'])->name('courses.modules.presentation.download');
+    Route::get('courses/{course}/modules/{module}/presentation/slide/{n}', [App\Http\Controllers\Admin\ModulePresentationController::class, 'previewImage'])->whereNumber('n')->name('courses.modules.presentation.preview');
 
     // Documento PDF modulo (P29 Fase 1) — renderer brandizzato, pattern async + stale
     Route::post('courses/{course}/modules/{module}/document/generate', [App\Http\Controllers\Admin\ModuleDocumentController::class, 'generate'])->name('courses.modules.document.generate');
