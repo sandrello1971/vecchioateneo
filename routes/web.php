@@ -261,6 +261,7 @@ Route::prefix('docente')->name('docente.')->middleware(['student.auth', 'profess
     // Presentazione .pptx della lezione (P21) — generazione/rigenerazione/stato/download (owner)
     Route::post('/lezioni/{lesson}/presentazione', [App\Http\Controllers\Docente\LessonPresentationController::class, 'generate'])->name('lessons.presentation.generate')->middleware('throttle:schola-generate');
     Route::post('/lezioni/{lesson}/presentazione/rigenera', [App\Http\Controllers\Docente\LessonPresentationController::class, 'regenerate'])->name('lessons.presentation.regenerate')->middleware('throttle:schola-generate');
+    Route::post('/lezioni/{lesson}/presentazione/correggi', [App\Http\Controllers\Docente\LessonPresentationController::class, 'edit'])->name('lessons.presentation.edit')->middleware('throttle:schola-generate');
     Route::get('/lezioni/{lesson}/presentazione/stato', [App\Http\Controllers\Docente\LessonPresentationController::class, 'status'])->name('lessons.presentation.status');
     Route::get('/lezioni/{lesson}/presentazione/download', [App\Http\Controllers\Docente\LessonPresentationController::class, 'download'])->name('lessons.presentation.download');
     Route::get('/lezioni/{lesson}/presentazione/slide/{n}', [App\Http\Controllers\Docente\LessonPresentationController::class, 'previewImage'])->whereNumber('n')->name('lessons.presentation.preview');
@@ -380,6 +381,7 @@ Route::prefix('admin')->name('admin.')->middleware(['admin.auth'])->group(functi
     // Presentazione .pptx modulo (P28) — generatore condiviso, pattern async
     Route::post('courses/{course}/modules/{module}/presentation/generate', [App\Http\Controllers\Admin\ModulePresentationController::class, 'generate'])->name('courses.modules.presentation.generate');
     Route::post('courses/{course}/modules/{module}/presentation/regenerate', [App\Http\Controllers\Admin\ModulePresentationController::class, 'regenerate'])->name('courses.modules.presentation.regenerate');
+    Route::post('courses/{course}/modules/{module}/presentation/edit', [App\Http\Controllers\Admin\ModulePresentationController::class, 'edit'])->name('courses.modules.presentation.edit');
     Route::get('courses/{course}/modules/{module}/presentation/status', [App\Http\Controllers\Admin\ModulePresentationController::class, 'status'])->name('courses.modules.presentation.status');
     Route::get('courses/{course}/modules/{module}/presentation/download', [App\Http\Controllers\Admin\ModulePresentationController::class, 'download'])->name('courses.modules.presentation.download');
     Route::get('courses/{course}/modules/{module}/presentation/slide/{n}', [App\Http\Controllers\Admin\ModulePresentationController::class, 'previewImage'])->whereNumber('n')->name('courses.modules.presentation.preview');

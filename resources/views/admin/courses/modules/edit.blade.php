@@ -344,6 +344,22 @@
                 </div>
             </div>
         @endif
+
+        {{-- S2 — correzione via prompt: SOLO se la presentazione ha spec persistita
+             (generata dal sistema). Gemella del box docente. --}}
+        @if(($modPres?->status ?? null) === 'ready' && !empty($modPres->spec))
+            <div style="margin-top:16px; border-top:1px solid #F0F2F2; padding-top:14px;" x-show="status!=='generating'">
+                <div style="font-size:0.72rem; font-weight:700; color:#8A9696; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Correggi le slide</div>
+                <form method="POST" action="{{ route('admin.courses.modules.presentation.edit', [$course, $module]) }}"
+                      onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').innerHTML='⏳ Correzione…';">
+                    @csrf
+                    <textarea name="instruction" rows="2" maxlength="2000" required
+                              placeholder="Descrivi la modifica (es. «Nella slide 3 aggiungi un esempio pratico»)"
+                              style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #C8D0D0; border-radius:8px; font-size:0.85rem; resize:vertical;"></textarea>
+                    <button type="submit" style="margin-top:8px; padding:9px 16px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">Applica correzione</button>
+                </form>
+            </div>
+        @endif
     </div>
 </div>
 

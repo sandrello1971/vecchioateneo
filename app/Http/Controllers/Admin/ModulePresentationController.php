@@ -8,6 +8,7 @@ use App\Models\Course;
 use App\Models\Module;
 use App\Models\ModulePresentation;
 use App\Services\Schola\SlidePreviewService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -54,6 +55,30 @@ class ModulePresentationController extends Controller
     public function regenerate(Course $course, Module $module)
     {
         return $this->generate($course, $module);
+    }
+
+    /**
+     * S2 — correzione via prompt. Solo presentazioni con spec persistita
+     * (generate dal sistema). Async: dispatcha il job con l'istruzione.
+     */
+    public function edit(Request $request, Course $course, Module $module)
+    {
+        $this->ensureInCourse($course, $module);
+        $data = $request->validate(['instruction' => 'required|string|max:2000']);
+
+        $presentation = $module->presentation()->first();
+        abort_unless($presentation && $presentation->status === 'ready' && !empty($presentation->spec), 422,
+            'Questa presentazione non è correggibile via prompt: rigenerala dal sistema per abilitarla.');
+
+        // Anti-doppio-submit (server): già in corso → non ridispatcha.
+        if ($presentation->status === 'generating') {
+            return back()->with('success', 'Correzione già in corso.');
+        }
+
+        $presentation->update(['status' => 'generating']);
+        GenerateModulePresentationJob::dispatch($presentation->id, $data['instruction'])->afterResponse();
+
+        return back()->with('success', 'Correzione avviata. Le slide saranno aggiornate a breve.');
     }
 
     public function status(Course $course, Module $module)

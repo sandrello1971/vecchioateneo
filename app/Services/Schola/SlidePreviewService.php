@@ -62,6 +62,20 @@ class SlidePreviewService
         }
     }
 
+    /**
+     * Invalida la cache dei PNG di una presentazione (S2: dopo una correzione il
+     * .pptx cambia). I PNG si rigenerano al prossimo accesso via imagesFor().
+     */
+    public function forget(string $pptxRelPath): void
+    {
+        $disk = Storage::disk(self::DISK);
+        foreach ($disk->files($this->cacheDir($pptxRelPath)) as $png) {
+            if (preg_match('#/slide_\d+\.png$#', $png)) {
+                $disk->delete($png);
+            }
+        }
+    }
+
     /** Directory di cache dei PNG: il path del .pptx senza estensione. */
     private function cacheDir(string $pptxRelPath): string
     {

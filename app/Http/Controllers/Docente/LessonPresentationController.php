@@ -7,6 +7,7 @@ use App\Jobs\GenerateLessonPresentationJob;
 use App\Models\Lesson;
 use App\Models\LessonPresentation;
 use App\Services\Schola\SlidePreviewService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -54,6 +55,32 @@ class LessonPresentationController extends Controller
     public function regenerate(Lesson $lesson)
     {
         return $this->generate($lesson);
+    }
+
+    /**
+     * S2 — correzione via prompt. Solo presentazioni con spec persistita
+     * (generate dal sistema). Async: dispatcha il job con l'istruzione.
+     */
+    public function edit(Request $request, Lesson $lesson)
+    {
+        $this->authorizeOwner($lesson);
+        $data = $request->validate(['instruction' => 'required|string|max:2000']);
+
+        $presentation = $lesson->presentations()->latest()->first();
+        abort_unless($presentation && $presentation->status === 'ready' && !empty($presentation->spec), 422,
+            'Questa presentazione non è correggibile via prompt: rigenerala dal sistema per abilitarla.');
+
+        // Anti-doppio-submit (server): già in corso → non ridispatcha.
+        if ($presentation->status === 'generating') {
+            return redirect()->route('docente.lessons.show', $lesson)
+                ->with('success', 'Correzione già in corso.');
+        }
+
+        $presentation->update(['status' => 'generating']);
+        GenerateLessonPresentationJob::dispatch($presentation->id, $data['instruction'])->afterResponse();
+
+        return redirect()->route('docente.lessons.show', $lesson)
+            ->with('success', 'Correzione avviata. Le slide saranno aggiornate a breve.');
     }
 
     public function status(Lesson $lesson)
