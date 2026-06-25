@@ -70,7 +70,8 @@ class StudentLessonController extends Controller
         $usage = app(\App\Services\Schola\ScholaUsage::class)->generationStatus($student->id);
 
         // Presentazione .pptx pronta (P21): scaricabile, mai generabile dallo studente.
-        $hasPresentation = $lesson->presentations()->where('status', 'ready')->exists();
+        // Solo la versione PUBBLICATA è visibile: le bozze del formatore restano nascoste.
+        $hasPresentation = $lesson->presentations()->where('status', 'ready')->whereNotNull('published_at')->exists();
 
         return view('student.lezioni.show', compact(
             'class', 'lesson', 'publication', 'bodyHtml', 'mediaMaterials', 'notes', 'teacherNotes',
@@ -90,7 +91,9 @@ class StudentLessonController extends Controller
         $this->assertActiveEnrollment($class, $student->id);
         $this->assertLessonPublished($lesson, $class);
 
-        $presentation = $lesson->presentations()->where('status', 'ready')->latest()->first();
+        // Solo la versione PUBBLICATA, la più recente per data di pubblicazione.
+        $presentation = $lesson->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->first();
         abort_unless($presentation && $presentation->file_path
             && Storage::disk('local')->exists($presentation->file_path), 404);
 

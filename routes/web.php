@@ -264,6 +264,8 @@ Route::prefix('docente')->name('docente.')->middleware(['student.auth', 'profess
     Route::post('/lezioni/{lesson}/presentazione/correggi', [App\Http\Controllers\Docente\LessonPresentationController::class, 'edit'])->name('lessons.presentation.edit')->middleware('throttle:schola-generate');
     Route::post('/lezioni/{lesson}/presentazione/carica', [App\Http\Controllers\Docente\LessonPresentationController::class, 'upload'])->name('lessons.presentation.upload');
     Route::delete('/lezioni/{lesson}/presentazione', [App\Http\Controllers\Docente\LessonPresentationController::class, 'destroy'])->name('lessons.presentation.destroy');
+    Route::post('/lezioni/{lesson}/presentazione/pubblica', [App\Http\Controllers\Docente\LessonPresentationController::class, 'publish'])->name('lessons.presentation.publish');
+    Route::post('/lezioni/{lesson}/presentazione/ritira', [App\Http\Controllers\Docente\LessonPresentationController::class, 'unpublish'])->name('lessons.presentation.unpublish');
     Route::get('/lezioni/{lesson}/presentazione/stato', [App\Http\Controllers\Docente\LessonPresentationController::class, 'status'])->name('lessons.presentation.status');
     Route::get('/lezioni/{lesson}/presentazione/download', [App\Http\Controllers\Docente\LessonPresentationController::class, 'download'])->name('lessons.presentation.download');
     Route::get('/lezioni/{lesson}/presentazione/slide/{n}', [App\Http\Controllers\Docente\LessonPresentationController::class, 'previewImage'])->whereNumber('n')->name('lessons.presentation.preview');
