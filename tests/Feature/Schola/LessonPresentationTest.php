@@ -229,7 +229,8 @@ class LessonPresentationTest extends TestCase
         $this->enroll($class, $student);
         $lesson = $this->lesson($prof);
         $this->publishLesson($lesson, $class);
-        $this->readyPresentation($lesson);
+        // Bi-versione: lo studente vede solo la presentazione PUBBLICATA.
+        $this->readyPresentation($lesson)->update(['published_at' => now()]);
 
         $this->asUser($student)->get(route('student.classes.lesson.presentation', [$class, $lesson]))
             ->assertOk()->assertDownload('le-cause.pptx');

@@ -143,95 +143,128 @@
         @endif
     @endif
 
-    {{-- Presentazione .pptx (P21) — Feedback UX: stato + polling, anti-doppio-submit --}}
+    {{-- Presentazione .pptx (P21) — BI-VERSIONE: "Versione online" (pubblicata, ciò che
+         vedono gli studenti) + "Bozza in lavorazione" (su cui lavora il formatore).
+         Il polling segue lo stato della BOZZA (generazione/correzione). --}}
     @if($lesson->generation_status === 'ready')
     <div style="background:white; border:1px solid #C8D0D0; border-radius:10px; padding:16px 18px; margin-bottom:16px;"
-         x-data="presentationStatus('{{ $presentation?->status ?? 'none' }}')">
-        <div style="display:flex; align-items:center; gap:12px;">
-            <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em; flex:1;">Presentazione (.pptx)</div>
-            <template x-if="status==='generating'">
-                <span style="display:flex; align-items:center; gap:8px; color:#E28A53; font-size:0.85rem; font-weight:600;">
-                    <span style="width:10px;height:10px;border-radius:50%;background:#E28A53;display:inline-block;animation:pulse 1s infinite;"></span>
-                    <span>Generazione in corso…</span>
-                </span>
-            </template>
-            <template x-if="status==='ready'"><span style="color:#3A8C89; font-weight:700; font-size:0.85rem;">&#10003; Pronta</span></template>
-            <template x-if="status==='failed'"><span style="color:#A8521F; font-weight:700; font-size:0.85rem;">&#10007; Generazione fallita</span></template>
-        </div>
+         x-data="presentationStatus('{{ $draft?->status ?? 'none' }}')">
+        <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em;">Presentazione (.pptx)</div>
 
-        @if(($presentation?->status ?? null) === 'failed' && ($presentation->generation_meta['failure_reason'] ?? null))
-            <p style="margin-top:8px; font-size:0.82rem; color:#A8521F;">{{ $presentation->generation_meta['failure_reason'] }}</p>
-        @endif
-        @if(($presentation?->status ?? null) === 'ready' && ($presentation->generation_meta['slides'] ?? null))
-            <div style="margin-top:6px; font-size:0.75rem; color:#8A9696;">{{ $presentation->generation_meta['slides'] }} slide @isset($presentation->generation_meta['model']) · {{ $presentation->generation_meta['model'] }} @endisset</div>
-        @endif
-        @if(($presentation->source ?? 'generated') === 'uploaded')
-            <div style="margin-top:6px;"><span style="display:inline-block; padding:2px 8px; background:#EEF3F3; color:#3A8C89; border-radius:6px; font-size:0.72rem; font-weight:700;">Versione caricata</span></div>
-        @endif
-
-        {{-- x-show sul wrapper esterno: NON deve stare sul contenitore flex, perché
-             Alpine (x-show) rimuove la proprietà `display` inline quando mostra,
-             azzerando `display:flex` → i bottoni perdono il gap e si sovrappongono. --}}
-        <div style="margin-top:12px;" x-show="status!=='generating'">
-        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-            @if(!$presentation || $presentation->status === 'pending' || $presentation->status === 'failed')
-                <form method="POST" action="{{ route('docente.lessons.presentation.generate', $lesson) }}" data-async>
-                    @csrf
-                    <button data-busy-label="Generazione…" style="padding:9px 16px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">{{ ($presentation?->status ?? null) === 'failed' ? 'Riprova' : 'Genera presentazione' }}</button>
-                </form>
-            @elseif($presentation->status === 'ready')
-                <a href="{{ route('docente.lessons.presentation.download', $lesson) }}" style="display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#3A8C89; color:white; border-radius:8px; font-size:0.85rem; font-weight:600; text-decoration:none;">&#11015; Scarica .pptx</a>
-                <form method="POST" action="{{ route('docente.lessons.presentation.regenerate', $lesson) }}" data-async
-                      onsubmit="return confirm('Rigenerare la presentazione? Il file attuale verrà sovrascritto.');">
-                    @csrf
-                    <button data-busy-label="Rigenerazione…" style="padding:9px 16px; background:white; color:#E28A53; border:1px solid #E28A53; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">Rigenera</button>
-                </form>
-            @endif
-
-            {{-- S3 — carica una propria versione .pptx (sostituisce quella corrente) --}}
-            <form method="POST" action="{{ route('docente.lessons.presentation.upload', $lesson) }}" enctype="multipart/form-data"
-                  style="display:inline-flex; align-items:center; gap:6px;"
-                  onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Caricamento…';">
-                @csrf
-                <input type="file" name="presentation" accept=".pptx" required style="font-size:0.78rem; max-width:190px;">
-                <button style="padding:9px 14px; background:white; color:#3A8C89; border:1px solid #3A8C89; border-radius:8px; font-size:0.82rem; font-weight:600; cursor:pointer;">Carica .pptx</button>
-            </form>
-
-            {{-- S3 — elimina la presentazione (azione distruttiva, conferma esplicita) --}}
-            @if($presentation && $presentation->status !== 'pending')
-                <form method="POST" action="{{ route('docente.lessons.presentation.destroy', $lesson) }}"
-                      onsubmit="return confirm('Eliminare la presentazione? Operazione non reversibile.') && (this.querySelector('button').disabled=true || true);">
-                    @csrf @method('DELETE')
-                    <button style="padding:9px 14px; background:white; color:#A8521F; border:1px solid #A8521F; border-radius:8px; font-size:0.82rem; font-weight:600; cursor:pointer;">Elimina</button>
-                </form>
-            @endif
-        </div>
-        </div>
-
-        {{-- S1 — anteprima slide (galleria + lightbox). I PNG arrivano dall'endpoint
-             preview (storage privato); il lightbox riusa lo stesso src full-res. --}}
-        @if(($presentation?->status ?? null) === 'ready' && ($presentation->generation_meta['slides'] ?? 0) > 0)
-            @php $slideUrls = array_map(fn ($i) => route('docente.lessons.presentation.preview', [$lesson, $i]), range(1, (int) $presentation->generation_meta['slides'])); @endphp
-            <div style="margin-top:16px; border-top:1px solid #F0F2F2; padding-top:14px;">
-                <div style="font-size:0.72rem; font-weight:700; color:#8A9696; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">Anteprima slide</div>
-                <x-slide-lightbox :images="$slideUrls" />
+        {{-- ===================== VERSIONE ONLINE (pubblicata) ===================== --}}
+        @if($published)
+            @php $pubUrls = array_map(fn ($i) => route('docente.lessons.presentation.preview', [$lesson, $i]) . '?version=published', range(1, (int) ($published->generation_meta['slides'] ?? 0))); @endphp
+            <div style="margin-top:12px; border:1px solid #BFE3D9; background:#F2FAF7; border-radius:8px; padding:12px 14px;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span style="display:inline-block; padding:2px 9px; background:#3A8C89; color:white; border-radius:6px; font-size:0.72rem; font-weight:700;">● PUBBLICATA</span>
+                    <span style="font-size:0.75rem; color:#3A8C89;">Visibile agli studenti · pubblicata il {{ $published->published_at->format('d/m/Y · H:i') }}</span>
+                    @if(($published->generation_meta['slides'] ?? null))<span style="font-size:0.75rem; color:#8A9696;">· {{ $published->generation_meta['slides'] }} slide</span>@endif
+                    <span style="flex:1;"></span>
+                    <form method="POST" action="{{ route('docente.lessons.presentation.unpublish', $lesson) }}"
+                          onsubmit="return confirm('Ritirare la presentazione? Gli studenti non la vedranno più.') && (this.querySelector('button').disabled=true || true);">
+                        @csrf
+                        <button style="padding:7px 13px; background:white; color:#A8521F; border:1px solid #A8521F; border-radius:8px; font-size:0.8rem; font-weight:600; cursor:pointer;">Ritira</button>
+                    </form>
+                </div>
+                @if(($published->generation_meta['slides'] ?? 0) > 0)
+                    <div style="margin-top:10px;"><x-slide-lightbox :images="$pubUrls" /></div>
+                @endif
             </div>
         @endif
 
-        {{-- S2 — correzione via prompt: SOLO se la presentazione ha spec persistita
-             (generata dal sistema). Sui record senza spec il box non appare. --}}
-        @if(($presentation?->status ?? null) === 'ready' && !empty($presentation->spec))
-            <div style="margin-top:16px; border-top:1px solid #F0F2F2; padding-top:14px;" x-show="status!=='generating'">
-                <div style="font-size:0.72rem; font-weight:700; color:#8A9696; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Correggi le slide</div>
-                <form method="POST" action="{{ route('docente.lessons.presentation.edit', $lesson) }}" data-async>
-                    @csrf
-                    <textarea name="instruction" rows="2" maxlength="2000" required
-                              placeholder="Descrivi la modifica (es. «Nella slide 3 aggiungi un esempio pratico»)"
-                              style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #C8D0D0; border-radius:8px; font-size:0.85rem; resize:vertical;"></textarea>
-                    <button data-busy-label="Correzione…" style="margin-top:8px; padding:9px 16px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">Applica correzione</button>
-                </form>
+        {{-- ===================== BOZZA (in lavorazione) ===================== --}}
+        @php
+            $draftUrls = $draft ? array_map(fn ($i) => route('docente.lessons.presentation.preview', [$lesson, $i]) . '?version=draft', range(1, (int) ($draft->generation_meta['slides'] ?? 0))) : [];
+            $canEdit = ($draft && !empty($draft->spec)) || (!$draft && $published && !empty($published->spec));
+        @endphp
+        <div style="margin-top:14px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                @if($draft)
+                    <span style="display:inline-block; padding:2px 9px; background:#F5E6B8; color:#7A5C00; border-radius:6px; font-size:0.72rem; font-weight:700;">BOZZA</span>
+                @else
+                    <span style="font-size:0.8rem; color:#8A9696;">{{ $published ? 'Nessuna bozza in lavorazione.' : 'Nessuna presentazione: generala o caricala.' }}</span>
+                @endif
+                <template x-if="status==='generating'">
+                    <span style="display:flex; align-items:center; gap:8px; color:#E28A53; font-size:0.82rem; font-weight:600;">
+                        <span style="width:10px;height:10px;border-radius:50%;background:#E28A53;display:inline-block;animation:pulse 1s infinite;"></span><span>In corso…</span>
+                    </span>
+                </template>
+                @if($draft && $draft->status === 'ready' && ($draft->generation_meta['slides'] ?? null))
+                    <span style="font-size:0.75rem; color:#8A9696;">{{ $draft->generation_meta['slides'] }} slide</span>
+                @endif
+                @if($draft && ($draft->source ?? 'generated') === 'uploaded')
+                    <span style="display:inline-block; padding:2px 8px; background:#EEF3F3; color:#3A8C89; border-radius:6px; font-size:0.72rem; font-weight:700;">Versione caricata</span>
+                @endif
             </div>
-        @endif
+
+            @if($draft && $draft->status === 'failed' && ($draft->generation_meta['failure_reason'] ?? null))
+                <p style="margin-top:8px; font-size:0.82rem; color:#A8521F;">{{ $draft->generation_meta['failure_reason'] }}</p>
+            @endif
+
+            {{-- Azioni (nascoste durante generating; x-show sul wrapper, flex sul figlio) --}}
+            <div style="margin-top:12px;" x-show="status!=='generating'">
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                @if(!$draft || in_array($draft->status, ['pending', 'failed']))
+                    <form method="POST" action="{{ route('docente.lessons.presentation.generate', $lesson) }}" data-async>
+                        @csrf
+                        <button data-busy-label="Generazione…" style="padding:9px 16px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">{{ ($draft?->status ?? null) === 'failed' ? 'Riprova generazione' : 'Genera bozza' }}</button>
+                    </form>
+                @elseif($draft->status === 'ready')
+                    <form method="POST" action="{{ route('docente.lessons.presentation.publish', $lesson) }}"
+                          onsubmit="return confirm('Pubblicare questa bozza? Sostituirà la versione online attuale e sarà visibile agli studenti.') && (this.querySelector('button').disabled=true || true);">
+                        @csrf
+                        <button style="padding:9px 16px; background:#3A8C89; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:700; cursor:pointer;">&#10003; Pubblica</button>
+                    </form>
+                    <a href="{{ route('docente.lessons.presentation.download', $lesson) }}" style="display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:white; color:#3A8C89; border:1px solid #3A8C89; border-radius:8px; font-size:0.85rem; font-weight:600; text-decoration:none;">&#11015; Scarica</a>
+                    <form method="POST" action="{{ route('docente.lessons.presentation.regenerate', $lesson) }}" data-async
+                          onsubmit="return confirm('Rigenerare la bozza? Il file della bozza verrà sovrascritto.');">
+                        @csrf
+                        <button data-busy-label="Rigenerazione…" style="padding:9px 16px; background:white; color:#E28A53; border:1px solid #E28A53; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">Rigenera</button>
+                    </form>
+                @endif
+
+                {{-- Carica una propria versione .pptx come bozza --}}
+                <form method="POST" action="{{ route('docente.lessons.presentation.upload', $lesson) }}" enctype="multipart/form-data"
+                      style="display:inline-flex; align-items:center; gap:6px;"
+                      onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Caricamento…';">
+                    @csrf
+                    <input type="file" name="presentation" accept=".pptx" required style="font-size:0.78rem; max-width:190px;">
+                    <button style="padding:9px 14px; background:white; color:#3A8C89; border:1px solid #3A8C89; border-radius:8px; font-size:0.82rem; font-weight:600; cursor:pointer;">Carica .pptx</button>
+                </form>
+
+                {{-- Elimina (bozza se presente, altrimenti la pubblicata) --}}
+                @if(($draft && $draft->status !== 'pending') || (!$draft && $published))
+                    <form method="POST" action="{{ route('docente.lessons.presentation.destroy', $lesson) }}"
+                          onsubmit="return confirm('Eliminare {{ $draft ? 'la bozza' : 'la presentazione' }}? Operazione non reversibile.') && (this.querySelector('button').disabled=true || true);">
+                        @csrf @method('DELETE')
+                        <button style="padding:9px 14px; background:white; color:#A8521F; border:1px solid #A8521F; border-radius:8px; font-size:0.82rem; font-weight:600; cursor:pointer;">{{ $draft ? 'Elimina bozza' : 'Elimina' }}</button>
+                    </form>
+                @endif
+            </div>
+            </div>
+
+            {{-- Anteprima della BOZZA (galleria + lightbox) --}}
+            @if($draft && $draft->status === 'ready' && ($draft->generation_meta['slides'] ?? 0) > 0)
+                <div style="margin-top:16px; border-top:1px solid #F0F2F2; padding-top:14px;">
+                    <div style="font-size:0.72rem; font-weight:700; color:#8A9696; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">Anteprima bozza</div>
+                    <x-slide-lightbox :images="$draftUrls" />
+                </div>
+            @endif
+
+            {{-- Correzione via prompt: bozza con spec, oppure (senza bozza) pubblicata con spec → crea una bozza --}}
+            @if($canEdit)
+                <div style="margin-top:16px; border-top:1px solid #F0F2F2; padding-top:14px;" x-show="status!=='generating'">
+                    <div style="font-size:0.72rem; font-weight:700; color:#8A9696; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Correggi le slide (sulla bozza)</div>
+                    <form method="POST" action="{{ route('docente.lessons.presentation.edit', $lesson) }}" data-async>
+                        @csrf
+                        <textarea name="instruction" rows="2" maxlength="2000" required
+                                  placeholder="Descrivi la modifica (es. «Nella slide 3 aggiungi un esempio pratico»)"
+                                  style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #C8D0D0; border-radius:8px; font-size:0.85rem; resize:vertical;"></textarea>
+                        <button data-busy-label="Correzione…" style="margin-top:8px; padding:9px 16px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">Applica correzione</button>
+                    </form>
+                </div>
+            @endif
+        </div>
     </div>
     @endif
 

@@ -51,12 +51,14 @@ class LessonController extends Controller
             ->get();
         $publishedClassIds = $lesson->publications->pluck('school_class_id')->all();
 
-        // Presentazione .pptx (P21): singola, riusata su rigenerazione.
-        $presentation = $lesson->presentations()->latest()->first();
+        // Presentazione .pptx (P21) — bi-versione: la BOZZA in lavorazione e la
+        // versione PUBBLICATA (ciò che vedono gli studenti) sono record distinti.
+        $draft = $lesson->presentations()->whereNull('published_at')->latest()->first();
+        $published = $lesson->presentations()->whereNotNull('published_at')->latest('published_at')->first();
 
         return view('docente.lezioni.show', compact(
             'lesson', 'materials', 'artifacts', 'teacherClasses', 'publishedClassIds',
-            'bodyHtml', 'teacherNotes', 'presentation'
+            'bodyHtml', 'teacherNotes', 'draft', 'published'
         ));
     }
 
