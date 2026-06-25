@@ -277,10 +277,15 @@
 @endpush
 
 {{-- ==================== PRESENTAZIONE .pptx (P28) — generatore condiviso, pattern async ==================== --}}
-@php $modPres = $module->presentation; @endphp
+@php
+    // Blocco B — bi-versione: l'admin lavora sulla BOZZA; i corsisti vedono la PUBBLICATA.
+    $modDraft = $module->presentations()->whereNull('published_at')->latest()->first();
+    $modPublished = $module->presentations()->whereNotNull('published_at')->latest('published_at')->first();
+    $modPres = $modDraft; // le azioni sotto (genera/rigenera/carica/correggi/elimina) operano sulla bozza
+@endphp
 <div style="max-width:900px; margin:20px auto 0;">
     <div style="background:white; border-radius:12px; padding:24px;"
-         x-data="modPresentationStatus('{{ $modPres?->status ?? 'none' }}')">
+         x-data="modPresentationStatus('{{ $modDraft?->status ?? 'none' }}')">
         <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
             <h3 style="font-size:1rem; font-weight:700; color:#1A1F1F; flex:1;">📊 Presentazione (.pptx)</h3>
             <template x-if="status==='generating'">
@@ -292,7 +297,32 @@
             <template x-if="status==='ready'"><span style="color:#3A8C89; font-weight:700; font-size:0.85rem;">&#10003; Pronta</span></template>
             <template x-if="status==='failed'"><span style="color:#A8521F; font-weight:700; font-size:0.85rem;">&#10007; Generazione fallita</span></template>
         </div>
-        <p style="font-size:0.78rem; color:#8A9696; margin-bottom:12px;">Slide 16:9 brandizzate (tema Noscite di piattaforma) generate dal contenuto del modulo.</p>
+        <p style="font-size:0.78rem; color:#8A9696; margin-bottom:12px;">Slide 16:9 brandizzate (tema Noscite di piattaforma) generate dal contenuto del modulo. I corsisti vedono solo la versione pubblicata.</p>
+
+        {{-- ===== VERSIONE ONLINE (pubblicata) — ciò che vedono i corsisti ===== --}}
+        @if($modPublished)
+            @php $modPubUrls = array_map(fn ($i) => route('admin.courses.modules.presentation.preview', [$course, $module, $i]) . '?version=published', range(1, (int) ($modPublished->generation_meta['slides'] ?? 0))); @endphp
+            <div style="border:1px solid #BFE3D9; background:#F2FAF7; border-radius:8px; padding:12px 14px; margin-bottom:14px;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span style="display:inline-block; padding:2px 9px; background:#3A8C89; color:white; border-radius:6px; font-size:0.72rem; font-weight:700;">● PUBBLICATA</span>
+                    <span style="font-size:0.75rem; color:#3A8C89;">Visibile ai corsisti · pubblicata il {{ $modPublished->published_at->format('d/m/Y · H:i') }}</span>
+                    @if(($modPublished->generation_meta['slides'] ?? null))<span style="font-size:0.75rem; color:#8A9696;">· {{ $modPublished->generation_meta['slides'] }} slide</span>@endif
+                    <span style="flex:1;"></span>
+                    <form method="POST" action="{{ route('admin.courses.modules.presentation.unpublish', [$course, $module]) }}"
+                          onsubmit="return confirm('Ritirare la presentazione? I corsisti non la vedranno più.') && (this.querySelector('button').disabled=true || true);">
+                        @csrf
+                        <button type="submit" style="padding:7px 13px; background:white; color:#A8521F; border:1px solid #A8521F; border-radius:8px; font-size:0.8rem; font-weight:600; cursor:pointer;">Ritira</button>
+                    </form>
+                </div>
+                @if(($modPublished->generation_meta['slides'] ?? 0) > 0)
+                    <div style="margin-top:10px;"><x-slide-lightbox :images="$modPubUrls" /></div>
+                @endif
+            </div>
+        @endif
+
+        @if($modDraft)
+            <div style="margin-bottom:8px;"><span style="display:inline-block; padding:2px 9px; background:#F5E6B8; color:#7A5C00; border-radius:6px; font-size:0.72rem; font-weight:700;">BOZZA in lavorazione</span></div>
+        @endif
 
         @if(($modPres?->status ?? null) === 'failed' && ($modPres->generation_meta['failure_reason'] ?? null))
             <p style="margin-bottom:10px; font-size:0.82rem; color:#A8521F;">{{ $modPres->generation_meta['failure_reason'] }}</p>
@@ -319,7 +349,12 @@
                         <button type="submit" style="padding:9px 16px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">{{ ($modPres?->status ?? null) === 'failed' ? '↻ Riprova' : '✨ Genera presentazione' }}</button>
                     </form>
                 @elseif($modPres->status === 'ready')
-                    <a href="{{ route('admin.courses.modules.presentation.download', [$course, $module]) }}" style="display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#3A8C89; color:white; border-radius:8px; font-size:0.85rem; font-weight:600; text-decoration:none;">&#11015; Scarica .pptx</a>
+                    <form method="POST" action="{{ route('admin.courses.modules.presentation.publish', [$course, $module]) }}"
+                          onsubmit="return confirm('Pubblicare questa bozza? Sostituirà la versione online attuale e sarà visibile ai corsisti.') && (this.querySelector('button').disabled=true || true);">
+                        @csrf
+                        <button type="submit" style="padding:9px 16px; background:#3A8C89; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:700; cursor:pointer;">&#10003; Pubblica</button>
+                    </form>
+                    <a href="{{ route('admin.courses.modules.presentation.download', [$course, $module]) }}" style="display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:white; color:#3A8C89; border:1px solid #3A8C89; border-radius:8px; font-size:0.85rem; font-weight:600; text-decoration:none;">&#11015; Scarica</a>
                     <form method="POST" action="{{ route('admin.courses.modules.presentation.regenerate', [$course, $module]) }}"
                           onsubmit="return confirm('Rigenerare la presentazione? Il file attuale verrà sovrascritto.') && (this.querySelector('button').disabled=true || true);">
                         @csrf

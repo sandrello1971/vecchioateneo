@@ -186,8 +186,9 @@ class ModulePresentationFlowTest extends TestCase
 
         $this->asAdmin()->get(route('admin.courses.modules.edit', [$module->course, $module]))
             ->assertOk()
-            ->assertSee('Scarica .pptx')
-            ->assertSee('Rigenera');
+            ->assertSee('Scarica')
+            ->assertSee('Rigenera')
+            ->assertSee('Pubblica'); // bi-versione: la bozza ready si può pubblicare
     }
 
     public function test_modulo_non_nel_corso_404(): void

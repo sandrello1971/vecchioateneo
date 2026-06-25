@@ -61,10 +61,11 @@ class Module extends Model
         return $this->hasMany(Material::class)->orderBy('sort_order');
     }
 
-    // P28 — presentazione .pptx generata del modulo (una per modulo).
-    public function presentation()
+    // P28 / Blocco B — presentazioni .pptx del modulo. Bi-versione: più record
+    // (1 pubblicata visibile ai corsisti + 1 bozza in lavorazione).
+    public function presentations()
     {
-        return $this->hasOne(ModulePresentation::class);
+        return $this->hasMany(ModulePresentation::class);
     }
 
     // P29 — documento PDF generato del modulo (uno per modulo).

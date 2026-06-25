@@ -11,6 +11,7 @@ use App\Models\QuizAttempt;
 use App\Models\Student;
 use App\Models\StudentModuleProgress;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class CourseController extends Controller
 {
@@ -215,13 +216,58 @@ class CourseController extends Controller
                 ->exists();
         }
 
+        // Blocco B — presentazione .pptx del modulo visibile al corsista: SOLO la
+        // versione PUBBLICATA (le bozze dell'admin restano nascoste).
+        $modulePresentation = $module->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->first();
+
         return view('student.course.module', compact(
             'course', 'module', 'materials', 'quiz', 'finalQuiz',
             'certificationPassed', 'progress', 'prevModule', 'nextModule',
             'canvases', 'isDemo', 'note', 'studentNotes',
             'instructorManualSections', 'instructorNotes', 'teaching',
-            'moduleConceptMap', 'moduleConceptMapForked', 'hasModuleDocument'
+            'moduleConceptMap', 'moduleConceptMapForked', 'hasModuleDocument',
+            'modulePresentation'
         ));
+    }
+
+    /**
+     * Blocco B — download della presentazione PUBBLICATA del modulo (corsista).
+     * Gate: stesso checkAccess del modulo. File da storage PRIVATO, mai URL diretto.
+     */
+    public function presentationDownload(Course $course, Module $module)
+    {
+        $this->checkAccess($course);
+        abort_unless($module->course_id === $course->id, 404);
+
+        $presentation = $module->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->first();
+        abort_unless($presentation && $presentation->file_path
+            && Storage::disk('local')->exists($presentation->file_path), 404);
+
+        $filename = $presentation->generation_meta['filename'] ?? (\Illuminate\Support\Str::slug($module->title) . '.pptx');
+
+        return response()->download(Storage::disk('local')->path($presentation->file_path), $filename);
+    }
+
+    /** Blocco B — anteprima PNG (slide n) della presentazione PUBBLICATA del modulo. */
+    public function presentationImage(Course $course, Module $module, int $n, \App\Services\Schola\SlidePreviewService $preview)
+    {
+        $this->checkAccess($course);
+        abort_unless($module->course_id === $course->id, 404);
+
+        $presentation = $module->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->first();
+        abort_unless($presentation && $presentation->file_path
+            && Storage::disk('local')->exists($presentation->file_path), 404);
+
+        $images = $preview->imagesFor($presentation->file_path);
+        $relPath = $images[$n - 1] ?? abort(404);
+
+        return response()->file(Storage::disk('local')->path($relPath), [
+            'Content-Type' => 'image/png',
+            'Cache-Control' => 'private, max-age=300',
+        ]);
     }
 
     public function completeModule(Course $course, Module $module)

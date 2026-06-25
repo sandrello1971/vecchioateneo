@@ -86,6 +86,9 @@ Route::prefix('learn')->name('student.')->group(function () {
         Route::get('/course/{course:slug}/module/{module}', [App\Http\Controllers\Student\CourseController::class, 'module'])->name('module.show');
         Route::post('/course/{course:slug}/module/{module}/complete', [App\Http\Controllers\Student\CourseController::class, 'completeModule'])->name('module.complete');
         Route::get('/course/{course:slug}/module/{module}/canvas/{canvas}', [App\Http\Controllers\Student\CourseController::class, 'canvas'])->name('module.canvas');
+        // Blocco B — presentazione .pptx del modulo (corsista): solo la pubblicata.
+        Route::get('/course/{course:slug}/module/{module}/presentazione/download', [App\Http\Controllers\Student\CourseController::class, 'presentationDownload'])->name('module.presentation.download');
+        Route::get('/course/{course:slug}/module/{module}/presentazione/slide/{n}', [App\Http\Controllers\Student\CourseController::class, 'presentationImage'])->whereNumber('n')->name('module.presentation.slide');
 
         // P29 Fase 3 — PDF generato (modulo + dispensa corso), generazione on-access
         Route::get('/course/{course:slug}/module/{module}/documento', [App\Http\Controllers\Student\GeneratedDocumentController::class, 'module'])->name('module.document.download');
@@ -386,6 +389,8 @@ Route::prefix('admin')->name('admin.')->middleware(['admin.auth'])->group(functi
     Route::post('courses/{course}/modules/{module}/presentation/generate', [App\Http\Controllers\Admin\ModulePresentationController::class, 'generate'])->name('courses.modules.presentation.generate');
     Route::post('courses/{course}/modules/{module}/presentation/regenerate', [App\Http\Controllers\Admin\ModulePresentationController::class, 'regenerate'])->name('courses.modules.presentation.regenerate');
     Route::post('courses/{course}/modules/{module}/presentation/edit', [App\Http\Controllers\Admin\ModulePresentationController::class, 'edit'])->name('courses.modules.presentation.edit');
+    Route::post('courses/{course}/modules/{module}/presentation/publish', [App\Http\Controllers\Admin\ModulePresentationController::class, 'publish'])->name('courses.modules.presentation.publish');
+    Route::post('courses/{course}/modules/{module}/presentation/unpublish', [App\Http\Controllers\Admin\ModulePresentationController::class, 'unpublish'])->name('courses.modules.presentation.unpublish');
     Route::post('courses/{course}/modules/{module}/presentation/upload', [App\Http\Controllers\Admin\ModulePresentationController::class, 'upload'])->name('courses.modules.presentation.upload');
     Route::delete('courses/{course}/modules/{module}/presentation', [App\Http\Controllers\Admin\ModulePresentationController::class, 'destroy'])->name('courses.modules.presentation.destroy');
     Route::get('courses/{course}/modules/{module}/presentation/status', [App\Http\Controllers\Admin\ModulePresentationController::class, 'status'])->name('courses.modules.presentation.status');

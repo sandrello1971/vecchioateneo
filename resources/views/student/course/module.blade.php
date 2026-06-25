@@ -404,6 +404,20 @@
         </div>
         @endif
 
+        {{-- Blocco B — presentazione .pptx del modulo (corsista): SOLO se pubblicata.
+             Galleria + lightbox riusano l'endpoint anteprima della pubblicata. --}}
+        @if(!$isDemo && $modulePresentation && ($modulePresentation->generation_meta['slides'] ?? 0) > 0)
+            @php $cPresUrls = array_map(fn ($i) => route('student.module.presentation.slide', [$course->slug, $module, $i]), range(1, (int) $modulePresentation->generation_meta['slides'])); @endphp
+            <div style="background:white; border-radius:12px; padding:20px; margin-bottom:20px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px;">
+                    <h3 style="font-weight:700; color:#1A1F1F; font-size:0.9rem;">📊 Presentazione del modulo</h3>
+                    <a href="{{ route('student.module.presentation.download', [$course->slug, $module]) }}"
+                       style="padding:5px 12px; background:#E8F5F5; color:#3A8C89; border-radius:6px; font-size:0.75rem; font-weight:600; text-decoration:none;">&#11015; Scarica .pptx</a>
+                </div>
+                <x-slide-lightbox :images="$cPresUrls" />
+            </div>
+        @endif
+
         @if($materials->isNotEmpty())
         <div style="background:white; border-radius:12px; padding:20px; margin-bottom:20px;">
             <h3 style="font-weight:700; color:#1A1F1F; margin-bottom:12px; font-size:0.9rem;">📎 Materiali del modulo</h3>

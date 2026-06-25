@@ -82,13 +82,16 @@ class ModulePresentationTest extends TestCase
         ]);
     }
 
-    public function test_una_sola_presentazione_per_modulo(): void
+    public function test_bi_versione_due_presentazioni_per_modulo(): void
     {
+        // Blocco B: rimosso UNIQUE(module_id) → un modulo può avere bozza + pubblicata.
         $module = $this->makeModule();
-        ModulePresentation::create(['module_id' => $module->id]);
+        ModulePresentation::create(['module_id' => $module->id, 'status' => 'ready', 'published_at' => now()]);
+        ModulePresentation::create(['module_id' => $module->id, 'status' => 'ready', 'published_at' => null]);
 
-        $this->expectException(QueryException::class);
-        ModulePresentation::create(['module_id' => $module->id]);
+        $this->assertSame(2, $module->presentations()->count());
+        $this->assertSame(1, $module->presentations()->whereNotNull('published_at')->count());
+        $this->assertSame(1, $module->presentations()->whereNull('published_at')->count());
     }
 
     // ============================================================
