@@ -71,12 +71,62 @@ class StudentLessonController extends Controller
 
         // Presentazione .pptx pronta (P21): scaricabile, mai generabile dallo studente.
         // Solo la versione PUBBLICATA è visibile: le bozze del formatore restano nascoste.
-        $hasPresentation = $lesson->presentations()->where('status', 'ready')->whereNotNull('published_at')->exists();
+        $publishedPresId = $lesson->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->value('id');
+        $hasPresentation = $publishedPresId !== null;
+
+        // V4 — video pubblicato, SOLO se legato alla presentazione pubblicata corrente
+        // (un video da una presentazione ritirata/cambiata non resta esposto).
+        $hasVideo = $publishedPresId && $lesson->videos()->where('presentation_id', $publishedPresId)
+            ->where('status', 'ready')->whereNotNull('published_at')->exists();
 
         return view('student.lezioni.show', compact(
             'class', 'lesson', 'publication', 'bodyHtml', 'mediaMaterials', 'notes', 'teacherNotes',
-            'generated', 'usage', 'hasPresentation'
+            'generated', 'usage', 'hasPresentation', 'hasVideo'
         ));
+    }
+
+    /**
+     * V4 — stream del video pubblicato della lezione (player HTML5, supporta Range/seek
+     * via BinaryFileResponse). Stesso gate della presentazione: iscrizione attiva +
+     * lezione pubblicata. Solo il video legato alla presentazione pubblicata corrente.
+     */
+    public function video(SchoolClass $class, Lesson $lesson)
+    {
+        $student = $this->currentStudent();
+        $this->assertActiveEnrollment($class, $student->id);
+        $this->assertLessonPublished($lesson, $class);
+
+        $publishedPresId = $lesson->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->value('id');
+        abort_unless($publishedPresId, 404);
+
+        $video = $lesson->videos()->where('presentation_id', $publishedPresId)
+            ->where('status', 'ready')->whereNotNull('published_at')->latest('published_at')->first();
+        abort_unless($video && $video->file_path && Storage::disk('local')->exists($video->file_path), 404);
+
+        return response()->file(Storage::disk('local')->path($video->file_path), ['Content-Type' => 'video/mp4']);
+    }
+
+    /**
+     * R4 — ricerca PER-VIDEO nel video pubblicato della lezione. Stesso gate del video
+     * (iscrizione attiva + lezione pubblicata). Proxy a videoai sul video_ai_id del video.
+     */
+    public function videoSearch(SchoolClass $class, Lesson $lesson, \Illuminate\Http\Request $request, \App\Services\Schola\VideoSearchService $search)
+    {
+        $student = $this->currentStudent();
+        $this->assertActiveEnrollment($class, $student->id);
+        $this->assertLessonPublished($lesson, $class);
+        $q = trim($request->input('q', ''));
+        abort_if($q === '', 422, 'Inserisci una ricerca.');
+
+        $publishedPresId = $lesson->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->value('id');
+        $video = $publishedPresId ? $lesson->videos()->where('presentation_id', $publishedPresId)
+            ->where('status', 'ready')->whereNotNull('published_at')->latest('published_at')->first() : null;
+        abort_unless($video && $video->video_ai_id, 404);
+
+        return response()->json(['matches' => $search->perVideo($video->video_ai_id, $q)]);
     }
 
     /**

@@ -68,6 +68,12 @@ class Module extends Model
         return $this->hasMany(ModulePresentation::class);
     }
 
+    // V0 — video narrati del modulo (derivati da una presentazione).
+    public function videos()
+    {
+        return $this->hasMany(ModuleVideo::class);
+    }
+
     // P29 — documento PDF generato del modulo (uno per modulo).
     public function document()
     {

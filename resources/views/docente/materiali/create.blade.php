@@ -25,11 +25,19 @@
             </div>
         </div>
 
+        @if(!empty($videoAiDpaMissing))
+            {{-- R5 — gate DPA: audio/video/foto bloccati finché la scuola non registra il consenso. --}}
+            <div style="margin-top:12px; padding:10px 14px; background:#FDECE2; border-left:4px solid #E28A53; border-radius:6px; color:#A8521F; font-size:0.82rem;">
+                ⚠️ <strong>Audio/video e foto disabilitati — DPA video-AI mancante.</strong>
+                Per elaborarli serve il consenso al trattamento tramite sub-processori esterni (audio/video → Whisper, immagini → Vision). Configura il DPA video-AI della scuola. PDF, Word e testo restano disponibili (elaborazione locale).
+            </div>
+        @endif
+
         <label style="font-size:0.8rem; font-weight:600; color:#4A5252; display:block; margin-top:12px;">Tipo di sorgente *</label>
         <select name="source_type" x-model="type" required style="width:100%; padding:9px 12px; border:1px solid #C8D0D0; border-radius:8px; font-size:0.875rem;">
-            <option value="audio">Audio o video (verrà trascritta la traccia audio)</option>
-            <option value="youtube">Video YouTube (URL)</option>
-            <option value="photos">Foto multiple (jpg/png, max 20)</option>
+            <option value="audio" @disabled(!empty($videoAiDpaMissing) && in_array('audio', $externalTypes ?? []))>Audio o video (verrà trascritta la traccia audio)@if(!empty($videoAiDpaMissing) && in_array('audio', $externalTypes ?? [])) — DPA mancante @endif</option>
+            <option value="youtube" @disabled(!empty($videoAiDpaMissing) && in_array('youtube', $externalTypes ?? []))>Video YouTube (URL)@if(!empty($videoAiDpaMissing) && in_array('youtube', $externalTypes ?? [])) — DPA mancante @endif</option>
+            <option value="photos" @disabled(!empty($videoAiDpaMissing) && in_array('photos', $externalTypes ?? []))>Foto multiple (jpg/png, max 20)@if(!empty($videoAiDpaMissing) && in_array('photos', $externalTypes ?? [])) — DPA mancante @endif</option>
             <option value="pdf">PDF</option>
             <option value="docx">Documento Word (docx)</option>
             <option value="text">Testo incollato</option>

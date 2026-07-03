@@ -9,9 +9,11 @@ use App\Models\FormatoreSnapshot;
 use App\Models\InstructorManualSection;
 use App\Models\Material;
 use App\Models\Module;
+use App\Jobs\RewriteInstructorManualJob;
 use App\Models\UpdateProposal;
 use App\Services\Freshness\ProposalApplicator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -120,43 +122,78 @@ class ProposalApplicatorTest extends TestCase
         ]);
     }
 
-    public function test_before_non_trovato_nel_live_fallisce_pulito(): void
+    public function test_manuale_non_verbatim_applica_sorgente_e_accoda_riscrittura(): void
     {
+        // P25.3f — disaccoppiamento: il sorgente matcha (è da lì che nasce il before), il manuale
+        // è riformulato e NON contiene il before verbatim. Non si blocca più: si applica al
+        // sorgente e si accoda la riscrittura semantica del manuale (Livello 2).
+        Queue::fake();
         $course = $this->course();
         $this->source($course, '2.0', self::BEFORE);
-        // Il live è riformulato: NON contiene il before verbatim.
         $section = $this->section($course, '<p>In Italia il mercato AI ha raggiunto 1,8 miliardi nel 2025.</p>');
         $p = $this->approved($course);
 
         $res = app(ProposalApplicator::class)->apply($course);
 
-        $this->assertSame(0, $res['applied']);
-        $this->assertSame('2.0', $res['version_from']);
-        $this->assertNull($res['version_to']); // nessuna nuova versione
-        $this->assertCount(1, $res['failed']);
+        // Applicata al sorgente, nuova versione creata.
+        $this->assertSame(1, $res['applied']);
+        $this->assertSame('2.1', $res['version_to']);
+        $this->assertCount(1, $res['queued']);
+        $this->assertEmpty($res['failed']);
+        $this->assertSame(self::AFTER, CourseSource::where('course_id', $course->id)->where('version', '2.1')->first()->blocks[0]['text']);
 
-        // Nessuna modifica: proposta resta approved con apply_error; live intatto.
+        // Proposta applicata, manuale in coda di riscrittura; manuale ancora INTATTO (lo tocca il job).
         $p->refresh();
-        $this->assertSame('approved', $p->status);
-        $this->assertStringContainsString('formatore', $p->apply_error);
+        $this->assertSame('applied', $p->status);
+        $this->assertSame('queued', $p->manual_status);
         $this->assertStringContainsString('1,8 miliardi nel 2025', $section->refresh()->content_html);
-        $this->assertSame(1, CourseSource::where('course_id', $course->id)->count()); // niente v2.1
+
+        // Riscrittura semantica del manuale accodata (gira async, fuori dalla transazione).
+        Queue::assertPushed(RewriteInstructorManualJob::class, fn ($job) => $job->proposalId === $p->id);
     }
 
-    public function test_before_non_unico_nel_live_fallisce_pulito(): void
+    public function test_manuale_non_unico_applica_sorgente_e_accoda_riscrittura(): void
     {
+        // Il before compare DUE volte nel manuale (non univoco verbatim): il sorgente si applica
+        // comunque e il manuale va in riscrittura semantica (l'ancora unica la trova il job).
+        Queue::fake();
         $course = $this->course();
         $this->source($course, '2.0', self::BEFORE);
-        // Il before compare DUE volte → non univoco → fallimento (non si sceglie a caso).
         $this->section($course, '<p>' . self::BEFORE . '. Ripetuto: ' . self::BEFORE . '.</p>');
         $p = $this->approved($course);
 
         $res = app(ProposalApplicator::class)->apply($course);
 
+        $this->assertSame(1, $res['applied']);
+        $this->assertCount(1, $res['queued']);
+        $this->assertSame('queued', $p->refresh()->manual_status);
+        $this->assertSame(self::AFTER, CourseSource::where('course_id', $course->id)->where('version', '2.1')->first()->blocks[0]['text']);
+        Queue::assertPushed(RewriteInstructorManualJob::class);
+    }
+
+    public function test_sorgente_e_manuale_entrambi_falliti_resta_approved_bloccata(): void
+    {
+        // Né sorgente (block_id assente) né manuale (riformulato) contengono il before verbatim:
+        // fallimento pulito, NESSUNA modifica, la proposta resta 'approved' con apply_error.
+        Queue::fake();
+        $course = $this->course();
+        $this->source($course, '2.0', self::BEFORE); // block id = self::BLOCK
+        $section = $this->section($course, '<p>In Italia il mercato AI ha raggiunto 1,8 miliardi nel 2025.</p>');
+        $p = $this->approved($course, ['block_id' => 'blocco-inesistente']); // sorgente non agganciabile
+
+        $res = app(ProposalApplicator::class)->apply($course);
+
         $this->assertSame(0, $res['applied']);
-        $this->assertStringContainsString('non unico', $p->refresh()->apply_error);
+        $this->assertNull($res['version_to']);
+        $this->assertCount(1, $res['failed']);
+        $this->assertEmpty($res['queued']);
+
+        $p->refresh();
         $this->assertSame('approved', $p->status);
-        $this->assertSame(1, CourseSource::where('course_id', $course->id)->count());
+        $this->assertNotNull($p->apply_error);
+        $this->assertStringContainsString('1,8 miliardi nel 2025', $section->refresh()->content_html); // intatto
+        $this->assertSame(1, CourseSource::where('course_id', $course->id)->count()); // niente v2.1
+        Queue::assertNotPushed(RewriteInstructorManualJob::class);
     }
 
     public function test_apply_normalizza_apostrofi_tipografici(): void
@@ -257,10 +294,12 @@ class ProposalApplicatorTest extends TestCase
         $this->assertSame('applied', UpdateProposal::where('course_id', $course->id)->first()->status);
     }
 
-    public function test_apply_lista_before_non_unico_negli_item_fallisce_pulito(): void
+    public function test_apply_lista_before_non_unico_negli_item_e_manuale_assente_resta_bloccata(): void
     {
+        // Sorgente lista col before in DUE item (ambiguo → non applicabile) E manuale che NON lo
+        // contiene: entrambi i target falliscono → fallimento pulito, proposta resta 'approved'.
+        Queue::fake();
         $course = $this->course();
-        // Il before è in DUE item → non univoco sulla lista → fallimento pulito (niente scelta a caso).
         CourseSource::create(['course_id' => $course->id, 'version' => '2.0', 'blocks' => [
             ['id' => 'bul1', 'type' => 'BUL', 'items' => [
                 self::BEFORE,
@@ -268,14 +307,37 @@ class ProposalApplicatorTest extends TestCase
                 self::BEFORE,
             ]],
         ]]);
-        $this->section($course, '<ul><li>' . self::BEFORE . '</li></ul>');
+        $this->section($course, '<ul><li>Una voce di manuale completamente diversa.</li></ul>');
         $p = $this->approved($course, ['block_id' => 'bul1']);
 
         $res = app(ProposalApplicator::class)->apply($course);
 
         $this->assertSame(0, $res['applied']);
         $this->assertSame('approved', $p->refresh()->status);
-        $this->assertStringContainsString('item della lista', $p->apply_error);
+        $this->assertNotNull($p->apply_error);
         $this->assertSame(1, CourseSource::where('course_id', $course->id)->count()); // niente v2.1
+        Queue::assertNotPushed(RewriteInstructorManualJob::class);
+    }
+
+    public function test_apply_lista_ambigua_ma_manuale_unico_applica_via_manuale(): void
+    {
+        // Disaccoppiamento: il sorgente lista è ambiguo, ma il manuale ha UN match verbatim →
+        // si applica al manuale (il sorgente resta invariato, nessun item scelto a caso).
+        Queue::fake();
+        $course = $this->course();
+        CourseSource::create(['course_id' => $course->id, 'version' => '2.0', 'blocks' => [
+            ['id' => 'bul1', 'type' => 'BUL', 'items' => [self::BEFORE, 'Voce intermedia.', self::BEFORE]],
+        ]]);
+        $section = $this->section($course, '<ul><li>' . self::BEFORE . '</li></ul>');
+        $p = $this->approved($course, ['block_id' => 'bul1']);
+
+        $res = app(ProposalApplicator::class)->apply($course);
+
+        $this->assertSame(1, $res['applied']);
+        $this->assertSame('verbatim', $p->refresh()->manual_status);
+        $this->assertStringContainsString(self::AFTER, $section->refresh()->content_html);
+        // Sorgente lista NON toccato (ambiguo): gli item restano col before.
+        $v21 = CourseSource::where('course_id', $course->id)->where('version', '2.1')->first();
+        $this->assertSame(self::BEFORE, $v21->blocks[0]['items'][0]);
     }
 }

@@ -268,6 +268,130 @@
     </div>
     @endif
 
+    {{-- V1 — Video narrato: copione (draft) dalla presentazione PUBBLICATA. UI minima. --}}
+    @if($lesson->generation_status === 'ready' && $published)
+        @php $lessonVideo = $lesson->videos()->where('presentation_id', $published->id)->latest()->first(); @endphp
+        <div style="background:white; border:1px solid #C8D0D0; border-radius:10px; padding:16px 18px; margin-bottom:16px;"
+             x-data="{ s: '{{ $lessonVideo?->status ?? 'none' }}' }"
+             x-init="if (s === 'generating') { const t = setInterval(async () => { const r = await fetch('{{ route('docente.lessons.video.status', $lesson) }}'); const j = await r.json(); if (j.status !== 'generating') { clearInterval(t); location.reload(); } }, 4000); }">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em; flex:1;">Video narrato</div>
+                @if(($lessonVideo?->script_status ?? 'none') === 'draft')
+                    <span style="display:inline-block; padding:2px 9px; background:#F5E6B8; color:#7A5C00; border-radius:6px; font-size:0.72rem; font-weight:700;">Copione: bozza</span>
+                @endif
+            </div>
+
+            <template x-if="s === 'generating'">
+                <p style="margin-top:8px; font-size:0.82rem; color:#E28A53;">Generazione del copione in corso… la pagina si aggiorna da sola.</p>
+            </template>
+
+            @if(($lessonVideo?->status ?? null) === 'failed' && ($lessonVideo->generation_meta['failure_reason'] ?? null))
+                <p style="margin-top:8px; font-size:0.82rem; color:#A8521F;">{{ $lessonVideo->generation_meta['failure_reason'] }}</p>
+            @endif
+
+            <div style="margin-top:12px;" x-show="s !== 'generating'">
+                <form method="POST" action="{{ route('docente.lessons.video.script', $lesson) }}" data-async>
+                    @csrf
+                    <button data-busy-label="Preparazione…" style="padding:9px 16px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">{{ ($lessonVideo?->script_status ?? 'none') === 'draft' ? 'Rigenera copione' : 'Prepara copione video' }}</button>
+                </form>
+                <p style="margin-top:6px; font-size:0.72rem; color:#8A9696;">Il copione resta in bozza: nessun costo voce finché non lo confermi.</p>
+            </div>
+
+            {{-- V2 — revisione copione: anteprima slide + testo affiancati, correzione a mano e via prompt --}}
+            @if(in_array($lessonVideo?->script_status ?? 'none', ['draft', 'confirmed'], true) && !empty($lessonVideo->script))
+                <div style="margin-top:14px; border-top:1px solid #F0F2F2; padding-top:12px;" x-data="{ zoom: null }">
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                        <div style="font-size:0.72rem; font-weight:700; color:#8A9696; text-transform:uppercase; letter-spacing:0.05em;">Copione per slide</div>
+                        <span style="flex:1;"></span>
+                        @if($lessonVideo->script_status === 'confirmed')
+                            <span style="display:inline-block; padding:2px 9px; background:#3A8C89; color:white; border-radius:6px; font-size:0.72rem; font-weight:700;">Copione confermato</span>
+                        @else
+                            <form method="POST" action="{{ route('docente.lessons.video.confirm', $lesson) }}"
+                                  onsubmit="return confirm('Confermare il copione? Potrai sempre rimodificarlo (tornerà in bozza).') && (this.querySelector('button').disabled=true || true);">
+                                @csrf
+                                <button style="padding:7px 13px; background:#3A8C89; color:white; border:none; border-radius:8px; font-size:0.8rem; font-weight:700; cursor:pointer;">&#10003; Conferma copione</button>
+                            </form>
+                        @endif
+                    </div>
+
+                    @foreach($lessonVideo->script as $line)
+                        @php $sn = (int) ($line['slide_number'] ?? 0); $pv = route('docente.lessons.presentation.preview', [$lesson, $sn]) . '?version=published'; @endphp
+                        <div style="display:flex; gap:12px; padding:12px 0; border-top:1px solid #F4F6F6;">
+                            <img src="{{ $pv }}" alt="Slide {{ $sn }}" loading="lazy" @click="zoom = '{{ $pv }}'"
+                                 style="width:200px; aspect-ratio:16/9; object-fit:contain; background:#0A0A0A; border:1px solid #C8D0D0; border-radius:6px; cursor:zoom-in; flex-shrink:0;">
+                            <div style="flex:1; min-width:0;">
+                                <div style="font-size:0.72rem; font-weight:700; color:#8A9696; margin-bottom:4px;">Slide {{ $sn }}</div>
+                                <form method="POST" action="{{ route('docente.lessons.video.line', $lesson) }}"
+                                      onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Salvataggio…';">
+                                    @csrf
+                                    <input type="hidden" name="slide_number" value="{{ $sn }}">
+                                    <textarea name="text" rows="3" maxlength="3000" style="width:100%; box-sizing:border-box; padding:7px 9px; border:1px solid #C8D0D0; border-radius:6px; font-size:0.82rem; resize:vertical;">{{ $line['text'] ?? '' }}</textarea>
+                                    <button style="margin-top:5px; padding:6px 12px; background:white; color:#3A8C89; border:1px solid #3A8C89; border-radius:7px; font-size:0.78rem; font-weight:600; cursor:pointer;">Salva</button>
+                                </form>
+                                <form method="POST" action="{{ route('docente.lessons.video.line.prompt', $lesson) }}"
+                                      style="margin-top:6px; display:flex; gap:6px;"
+                                      onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='…';">
+                                    @csrf
+                                    <input type="hidden" name="slide_number" value="{{ $sn }}">
+                                    <input type="text" name="instruction" maxlength="2000" required placeholder="Ritocca con un'istruzione (es. «rendila più discorsiva»)"
+                                           style="flex:1; min-width:0; padding:6px 9px; border:1px solid #C8D0D0; border-radius:7px; font-size:0.8rem;">
+                                    <button style="padding:6px 12px; background:white; color:#55B1AE; border:1px solid #55B1AE; border-radius:7px; font-size:0.78rem; font-weight:600; cursor:pointer;">Ritocca</button>
+                                </form>
+                            </div>
+                        </div>
+                    @endforeach
+
+                    {{-- zoom anteprima --}}
+                    <div x-show="zoom" x-cloak @click="zoom = null" @keydown.escape.window="zoom = null"
+                         style="position:fixed; inset:0; z-index:1000; background:rgba(10,10,10,0.92); display:flex; align-items:center; justify-content:center;">
+                        <img :src="zoom" alt="" style="max-width:90vw; max-height:88vh; object-fit:contain;">
+                    </div>
+                </div>
+            @endif
+
+            {{-- V3 — render MP4: da copione confermato. Pronto → scarica. --}}
+            @if(($lessonVideo?->status ?? null) === 'ready' && $lessonVideo->file_path)
+                <div style="margin-top:14px; border-top:1px solid #F0F2F2; padding-top:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <span style="display:inline-block; padding:2px 9px; background:#3A8C89; color:white; border-radius:6px; font-size:0.72rem; font-weight:700;">🎬 Video pronto</span>
+                    @isset($lessonVideo->generation_meta['seconds'])<span style="font-size:0.75rem; color:#8A9696;">{{ (int) $lessonVideo->generation_meta['seconds'] }}s</span>@endisset
+                    @if($lessonVideo->published_at)
+                        <span style="display:inline-block; padding:2px 9px; background:#3A8C89; color:white; border-radius:6px; font-size:0.72rem; font-weight:700;">Pubblicato</span>
+                    @else
+                        <span style="display:inline-block; padding:2px 9px; background:#F5E6B8; color:#7A5C00; border-radius:6px; font-size:0.72rem; font-weight:700;">Bozza</span>
+                    @endif
+                    <span style="flex:1;"></span>
+                    <a href="{{ route('docente.lessons.video.download', $lesson) }}" style="padding:7px 13px; background:white; color:#3A8C89; border:1px solid #3A8C89; border-radius:8px; font-size:0.8rem; font-weight:600; text-decoration:none;">&#11015; Scarica</a>
+                    @if($lessonVideo->published_at)
+                        <form method="POST" action="{{ route('docente.lessons.video.unpublish', $lesson) }}"
+                              onsubmit="return confirm('Ritirare il video? Gli studenti non lo vedranno più.') && (this.querySelector('button').disabled=true || true);">
+                            @csrf
+                            <button style="padding:7px 13px; background:white; color:#A8521F; border:1px solid #A8521F; border-radius:8px; font-size:0.8rem; font-weight:600; cursor:pointer;">Ritira</button>
+                        </form>
+                    @else
+                        <form method="POST" action="{{ route('docente.lessons.video.publish', $lesson) }}"
+                              onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Pubblicazione…';">
+                            @csrf
+                            <button style="padding:7px 14px; background:#3A8C89; color:white; border:none; border-radius:8px; font-size:0.8rem; font-weight:700; cursor:pointer;">&#10003; Pubblica</button>
+                        </form>
+                    @endif
+                </div>
+                @unless($lessonVideo->published_at)
+                    <p style="font-size:0.72rem; color:#8A9696;">Pubblicando, il video viene anche indicizzato (ricercabile). Indicizzazione gratuita per i video generati.</p>
+                @endunless
+            @endif
+            @if(($lessonVideo?->script_status ?? 'none') === 'confirmed')
+                <div style="margin-top:12px; border-top:1px solid #F0F2F2; padding-top:12px;" x-show="s !== 'generating'">
+                    <form method="POST" action="{{ route('docente.lessons.video.generate', $lesson) }}" data-async
+                          onsubmit="return confirm('Generare il video? Verrà sintetizzata la voce (ha un costo) e composto l\'mp4.');">
+                        @csrf
+                        <button data-busy-label="Generazione…" style="padding:9px 16px; background:#A6192E; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:700; cursor:pointer;">🎬 {{ ($lessonVideo?->status ?? null) === 'ready' ? 'Rigenera video' : 'Genera video' }}</button>
+                    </form>
+                    <p style="margin-top:6px; font-size:0.72rem; color:#8A9696;">La voce TTS ha un costo: si genera solo dal copione confermato.</p>
+                </div>
+            @endif
+        </div>
+    @endif
+
     {{-- Pubblicazione su classi (P20a) — Feedback UX: rag_status + polling --}}
     @if($lesson->generation_status === 'ready')
     <div style="background:white; border:1px solid #C8D0D0; border-radius:10px; padding:16px 18px; margin-bottom:16px;" x-data="lessonPublications('{{ $lesson->id }}')">

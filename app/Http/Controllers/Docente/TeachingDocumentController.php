@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Docente;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\ExtractTeachingDocumentJob;
+use App\Models\Student;
 use App\Models\Subject;
 use App\Models\TeachingDocument;
+use App\Support\VideoAiConsent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -47,7 +49,12 @@ class TeachingDocumentController extends Controller
     public function create()
     {
         $subjects = Subject::orderBy('name')->get();
-        return view('docente.materiali.create', compact('subjects'));
+        // R5 — il docente è di una scuola senza consenso DPA video-AI? → audio/video/foto bloccati.
+        $teacher = Student::find($this->teacherId());
+        $videoAiDpaMissing = $teacher && $teacher->school_id && !optional($teacher->school)->hasVideoAiDpa();
+        $externalTypes = VideoAiConsent::externalSourceTypes();
+
+        return view('docente.materiali.create', compact('subjects', 'videoAiDpaMissing', 'externalTypes'));
     }
 
     public function store(Request $request)
@@ -96,6 +103,12 @@ class TeachingDocumentController extends Controller
                 'text_content' => 'required|string',
             ]),
         };
+
+        // R5 — gate DPA: in ambito scolastico i materiali che passano da sub-processori
+        // esterni (audio/video→Whisper, foto→Vision) richiedono il consenso registrato.
+        if (VideoAiConsent::blocked(Student::find($this->teacherId()), $base['source_type'])) {
+            return back()->withInput()->with('error', VideoAiConsent::MESSAGE);
+        }
 
         $doc = TeachingDocument::create([
             'teacher_id' => $this->teacherId(),

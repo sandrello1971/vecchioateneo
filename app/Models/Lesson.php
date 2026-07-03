@@ -60,4 +60,10 @@ class Lesson extends Model
     {
         return $this->hasMany(LessonPresentation::class);
     }
+
+    // V0 — video narrati della lezione (derivati da una presentazione).
+    public function videos()
+    {
+        return $this->hasMany(LessonVideo::class);
+    }
 }

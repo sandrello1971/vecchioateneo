@@ -39,6 +39,9 @@ Route::prefix('learn')->name('student.')->group(function () {
     Route::get('/login', [App\Http\Controllers\Student\AuthController::class, 'showLogin'])->name('login');
     Route::post('/login', [App\Http\Controllers\Student\AuthController::class, 'login'])->middleware('throttle:login')->name('login.post');
     Route::post('/logout', [App\Http\Controllers\Student\AuthController::class, 'logout'])->name('logout');
+    // GET di cortesia: aprire /learn/logout via URL/bookmark esegue il logout e
+    // riporta al login (invece del 405). Il logout "ufficiale" resta POST (i form).
+    Route::get('/logout', [App\Http\Controllers\Student\AuthController::class, 'logout'])->name('logout.get');
     Route::get('/change-password', [App\Http\Controllers\Student\AuthController::class, 'showChangePassword'])->name('change-password');
     Route::post('/change-password', [App\Http\Controllers\Student\AuthController::class, 'changePassword'])->name('change-password.post');
 
@@ -60,6 +63,8 @@ Route::prefix('learn')->name('student.')->group(function () {
         Route::get('/classi/{class}/lezioni/{lesson}', [App\Http\Controllers\Student\StudentLessonController::class, 'show'])->name('classes.lesson.show');
         Route::get('/classi/{class}/lezioni/{lesson}/materiali/{document}/sorgente', [App\Http\Controllers\Student\StudentLessonController::class, 'materialSource'])->name('classes.lesson.material.source');
         Route::get('/classi/{class}/lezioni/{lesson}/presentazione', [App\Http\Controllers\Student\StudentLessonController::class, 'presentation'])->name('classes.lesson.presentation');
+        Route::get('/classi/{class}/lezioni/{lesson}/video', [App\Http\Controllers\Student\StudentLessonController::class, 'video'])->name('classes.lesson.video');
+        Route::post('/classi/{class}/lezioni/{lesson}/video/cerca', [App\Http\Controllers\Student\StudentLessonController::class, 'videoSearch'])->name('classes.lesson.video.search')->middleware('throttle:minerva-chat');
 
         // Messaggistica di classe (P22) — thread col docente + annunci (sola lettura)
         Route::get('/classi/{class}/messaggi', [App\Http\Controllers\Student\ClassMessageController::class, 'index'])->name('classi.messaggi.index');
@@ -88,6 +93,8 @@ Route::prefix('learn')->name('student.')->group(function () {
         Route::get('/course/{course:slug}/module/{module}/canvas/{canvas}', [App\Http\Controllers\Student\CourseController::class, 'canvas'])->name('module.canvas');
         // Blocco B — presentazione .pptx del modulo (corsista): solo la pubblicata.
         Route::get('/course/{course:slug}/module/{module}/presentazione/download', [App\Http\Controllers\Student\CourseController::class, 'presentationDownload'])->name('module.presentation.download');
+        Route::get('/course/{course:slug}/module/{module}/video', [App\Http\Controllers\Student\CourseController::class, 'moduleVideoStream'])->name('module.video');
+        Route::post('/course/{course:slug}/module/{module}/video/cerca', [App\Http\Controllers\Student\CourseController::class, 'moduleVideoSearch'])->name('module.video.search')->middleware('throttle:minerva-chat');
         Route::get('/course/{course:slug}/module/{module}/presentazione/slide/{n}', [App\Http\Controllers\Student\CourseController::class, 'presentationImage'])->whereNumber('n')->name('module.presentation.slide');
 
         // P29 Fase 3 — PDF generato (modulo + dispensa corso), generazione on-access
@@ -272,6 +279,18 @@ Route::prefix('docente')->name('docente.')->middleware(['student.auth', 'profess
     Route::get('/lezioni/{lesson}/presentazione/stato', [App\Http\Controllers\Docente\LessonPresentationController::class, 'status'])->name('lessons.presentation.status');
     Route::get('/lezioni/{lesson}/presentazione/download', [App\Http\Controllers\Docente\LessonPresentationController::class, 'download'])->name('lessons.presentation.download');
     Route::get('/lezioni/{lesson}/presentazione/slide/{n}', [App\Http\Controllers\Docente\LessonPresentationController::class, 'previewImage'])->whereNumber('n')->name('lessons.presentation.preview');
+    // V1 — video narrato: generazione copione (Claude) + stato.
+    Route::post('/lezioni/{lesson}/video/copione', [App\Http\Controllers\Docente\LessonVideoController::class, 'generateScript'])->name('lessons.video.script')->middleware('throttle:schola-generate');
+    Route::get('/lezioni/{lesson}/video/stato', [App\Http\Controllers\Docente\LessonVideoController::class, 'status'])->name('lessons.video.status');
+    // V2 — revisione copione: correzione a mano / via prompt / conferma.
+    Route::post('/lezioni/{lesson}/video/riga', [App\Http\Controllers\Docente\LessonVideoController::class, 'editLine'])->name('lessons.video.line');
+    Route::post('/lezioni/{lesson}/video/riga/ritocca', [App\Http\Controllers\Docente\LessonVideoController::class, 'editLinePrompt'])->name('lessons.video.line.prompt')->middleware('throttle:schola-generate');
+    Route::post('/lezioni/{lesson}/video/conferma', [App\Http\Controllers\Docente\LessonVideoController::class, 'confirm'])->name('lessons.video.confirm');
+    // V3 — render MP4 (TTS + ffmpeg) e download owner.
+    Route::post('/lezioni/{lesson}/video/genera', [App\Http\Controllers\Docente\LessonVideoController::class, 'generateVideo'])->name('lessons.video.generate')->middleware('throttle:schola-generate');
+    Route::get('/lezioni/{lesson}/video/download', [App\Http\Controllers\Docente\LessonVideoController::class, 'downloadVideo'])->name('lessons.video.download');
+    Route::post('/lezioni/{lesson}/video/pubblica', [App\Http\Controllers\Docente\LessonVideoController::class, 'publishVideo'])->name('lessons.video.publish');
+    Route::post('/lezioni/{lesson}/video/ritira', [App\Http\Controllers\Docente\LessonVideoController::class, 'unpublishVideo'])->name('lessons.video.unpublish');
 
     // Pubblicazione lezione su classe (P20a) — cattedra/proprietà + ingestion RAG asincrona
     Route::post('/lezioni/{lesson}/pubblica', [App\Http\Controllers\Docente\LessonPublicationController::class, 'store'])->name('lessons.publish');
@@ -391,6 +410,16 @@ Route::prefix('admin')->name('admin.')->middleware(['admin.auth'])->group(functi
     Route::post('courses/{course}/modules/{module}/presentation/edit', [App\Http\Controllers\Admin\ModulePresentationController::class, 'edit'])->name('courses.modules.presentation.edit');
     Route::post('courses/{course}/modules/{module}/presentation/publish', [App\Http\Controllers\Admin\ModulePresentationController::class, 'publish'])->name('courses.modules.presentation.publish');
     Route::post('courses/{course}/modules/{module}/presentation/unpublish', [App\Http\Controllers\Admin\ModulePresentationController::class, 'unpublish'])->name('courses.modules.presentation.unpublish');
+    // V1 — video narrato del modulo: generazione copione + stato.
+    Route::post('courses/{course}/modules/{module}/video/script', [App\Http\Controllers\Admin\ModuleVideoController::class, 'generateScript'])->name('courses.modules.video.script');
+    Route::get('courses/{course}/modules/{module}/video/status', [App\Http\Controllers\Admin\ModuleVideoController::class, 'status'])->name('courses.modules.video.status');
+    Route::post('courses/{course}/modules/{module}/video/line', [App\Http\Controllers\Admin\ModuleVideoController::class, 'editLine'])->name('courses.modules.video.line');
+    Route::post('courses/{course}/modules/{module}/video/line/prompt', [App\Http\Controllers\Admin\ModuleVideoController::class, 'editLinePrompt'])->name('courses.modules.video.line.prompt');
+    Route::post('courses/{course}/modules/{module}/video/confirm', [App\Http\Controllers\Admin\ModuleVideoController::class, 'confirm'])->name('courses.modules.video.confirm');
+    Route::post('courses/{course}/modules/{module}/video/generate', [App\Http\Controllers\Admin\ModuleVideoController::class, 'generateVideo'])->name('courses.modules.video.generate');
+    Route::get('courses/{course}/modules/{module}/video/download', [App\Http\Controllers\Admin\ModuleVideoController::class, 'downloadVideo'])->name('courses.modules.video.download');
+    Route::post('courses/{course}/modules/{module}/video/publish', [App\Http\Controllers\Admin\ModuleVideoController::class, 'publishVideo'])->name('courses.modules.video.publish');
+    Route::post('courses/{course}/modules/{module}/video/unpublish', [App\Http\Controllers\Admin\ModuleVideoController::class, 'unpublishVideo'])->name('courses.modules.video.unpublish');
     Route::post('courses/{course}/modules/{module}/presentation/upload', [App\Http\Controllers\Admin\ModulePresentationController::class, 'upload'])->name('courses.modules.presentation.upload');
     Route::delete('courses/{course}/modules/{module}/presentation', [App\Http\Controllers\Admin\ModulePresentationController::class, 'destroy'])->name('courses.modules.presentation.destroy');
     Route::get('courses/{course}/modules/{module}/presentation/status', [App\Http\Controllers\Admin\ModulePresentationController::class, 'status'])->name('courses.modules.presentation.status');
@@ -425,6 +454,7 @@ Route::prefix('admin')->name('admin.')->middleware(['admin.auth'])->group(functi
     Route::post('aggiornamenti/{course}/audience', [App\Http\Controllers\Admin\FreshnessProposalController::class, 'setAudience'])->name('freshness.proposals.audience');
     Route::post('aggiornamenti/{course}/applica', [App\Http\Controllers\Admin\FreshnessProposalController::class, 'apply'])->name('freshness.proposals.apply');
     Route::post('aggiornamenti/{course}/rollback', [App\Http\Controllers\Admin\FreshnessProposalController::class, 'rollback'])->name('freshness.proposals.rollback');
+    Route::post('aggiornamenti/{course}/scarta-bloccate', [App\Http\Controllers\Admin\FreshnessProposalController::class, 'rejectStuck'])->name('freshness.proposals.reject-stuck');
     Route::patch('aggiornamenti/{proposal}/approva', [App\Http\Controllers\Admin\FreshnessProposalController::class, 'approve'])->name('freshness.proposals.approve');
     Route::patch('aggiornamenti/{proposal}/rifiuta', [App\Http\Controllers\Admin\FreshnessProposalController::class, 'reject'])->name('freshness.proposals.reject');
     Route::patch('aggiornamenti/{proposal}/conferma', [App\Http\Controllers\Admin\FreshnessProposalController::class, 'confirm'])->name('freshness.proposals.confirm');

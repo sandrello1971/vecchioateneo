@@ -132,6 +132,22 @@
                             <input type="hidden" name="content_source" value="{{ $source }}">
                             <button type="submit" style="padding:5px 12px; background:white; color:#8A6D1B; border:1px solid #C9A227; border-radius:6px; font-size:0.75rem; cursor:pointer;">&#8617; Rollback {{ $source === 'student' ? 'studente' : 'formatore' }}</button>
                         </form>
+                        {{-- P25.3f — escape hatch: scarta in blocco le proposte 'approved' bloccate (apply_error). --}}
+                        @if (($c->stuck_count ?? 0) > 0)
+                            <form method="POST" action="{{ route('admin.freshness.proposals.reject-stuck', $c) }}" style="margin:4px 0 0; display:inline-block;"
+                                  onsubmit="return confirm('Scartare {{ $c->stuck_count }} proposte BLOCCATE ({{ $source }}) di «{{ $c->name }}»? (before non applicabile né a sorgente né a manuale)');">
+                                @csrf
+                                <input type="hidden" name="content_source" value="{{ $source }}">
+                                <button type="submit" style="padding:5px 12px; background:white; color:#7B1E1E; border:1px solid #C0392B; border-radius:6px; font-size:0.75rem; cursor:pointer;">&#10005; Scarta {{ $c->stuck_count }} bloccate</button>
+                            </form>
+                        @endif
+                        {{-- P25.3f — manuale formatore da rivedere a mano (riscrittura semantica senza ancora). --}}
+                        @if ($source === 'instructor' && ($c->manual_attention_count ?? 0) > 0)
+                            <div style="margin-top:4px; font-size:0.68rem; color:#8A6D1B; background:#F7EFD6; border:1px solid #E3CE8F; border-radius:6px; padding:3px 8px; display:inline-block;"
+                                 title="Aggiornamento applicato al sorgente, ma il manuale non è stato ancorato automaticamente: rivedi il passaggio a mano.">
+                                ⚠ {{ $c->manual_attention_count }} manuale da rivedere
+                            </div>
+                        @endif
                     </td>
                 </tr>
             @endforeach

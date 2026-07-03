@@ -2,6 +2,7 @@
 
 namespace App\Services\Freshness;
 
+use App\Jobs\RewriteInstructorManualJob;
 use App\Models\Course;
 use App\Models\CourseChangelog;
 use App\Models\CourseSource;
@@ -40,7 +41,7 @@ class ProposalApplicator
      */
     public function apply(Course $course, bool $minorConfirmed = false): array
     {
-        return DB::transaction(function () use ($course, $minorConfirmed) {
+        $result = DB::transaction(function () use ($course, $minorConfirmed) {
             // GATE SCHOLA/MINORI (P25.3e): barriera in PIÙ, non sostituisce l'HITL. Su un
             // corso audience=minor l'applicazione richiede una conferma esplicita aggiuntiva
             // (gate 2, umano) oltre alle proposte già approvate (gate 1, umano). Senza
@@ -48,7 +49,7 @@ class ProposalApplicator
             $audience = optional($course->freshnessConfig)->audience ?? 'adult';
             if ($audience === 'minor' && !$minorConfirmed) {
                 return [
-                    'applied' => 0, 'failed' => [], 'blocked' => 'minor_confirmation_required',
+                    'applied' => 0, 'failed' => [], 'queued' => [], 'blocked' => 'minor_confirmation_required',
                     'version_from' => optional($this->latestSource($course))->version, 'version_to' => null,
                 ];
             }
@@ -67,7 +68,7 @@ class ProposalApplicator
                 ->get();
 
             if ($approved->isEmpty()) {
-                return ['applied' => 0, 'failed' => [], 'version_from' => $current->version, 'version_to' => null, 'blocked' => null];
+                return ['applied' => 0, 'failed' => [], 'queued' => [], 'version_from' => $current->version, 'version_to' => null, 'blocked' => null];
             }
 
             $blocks = $current->blocks ?? [];
@@ -88,25 +89,27 @@ class ProposalApplicator
 
             $appliedProposals = [];
             $failed = [];
+            $queuedIds = []; // proposte da riscrivere semanticamente sul manuale (async)
 
             foreach ($approved as $p) {
-                // 1) Sorgente strutturato: blocco per block_id.
-                if (!array_key_exists($p->block_id, $blockIndex)) {
-                    $this->fail($p, "sorgente: block_id {$p->block_id} non presente nella versione corrente");
-                    $failed[] = ['id' => $p->id, 'error' => $p->apply_error];
-                    continue;
-                }
-                $idx = $blockIndex[$p->block_id];
-                // Replace verbatim sul blocco: gestisce sia i blocchi con `text` sia le liste
-                // BUL/NUM con `items` (dove `text` è vuoto). Simmetrico a searchableText (Fase 1).
-                $srcRes = $this->replaceInSourceBlock($blocks[$idx], $p->before, $p->after);
-                if (!$srcRes['ok']) {
-                    $this->fail($p, 'sorgente: ' . $srcRes['reason']);
-                    $failed[] = ['id' => $p->id, 'error' => $p->apply_error];
-                    continue;
+                // P25.3f — DISACCOPPIAMENTO: sorgente e manuale formatore divergono (il sorgente
+                // è una ristrutturazione LLM). Si applicano in modo INDIPENDENTE: la proposta è
+                // "applicata" se ALMENO un target attecchisce. Il manuale che non combacia verbatim
+                // NON blocca più: viene accodato alla riscrittura semantica (Livello 2).
+
+                // 1) Sorgente strutturato: replace verbatim sul blocco per block_id (text o items).
+                $srcOk = false;
+                if (array_key_exists($p->block_id, $blockIndex)) {
+                    $idx = $blockIndex[$p->block_id];
+                    $srcRes = $this->replaceInSourceBlock($blocks[$idx], $p->before, $p->after);
+                    if ($srcRes['ok']) {
+                        $blocks[$idx] = $srcRes['block'];
+                        $srcOk = true;
+                    }
                 }
 
-                // 2) Formatore live: il before deve essere unico SU TUTTE le sezioni.
+                // 2) Manuale formatore live: il before deve essere verbatim e UNICO su tutte le sezioni.
+                $manualOk = false;
                 $hitSection = null;
                 $totalHits = 0;
                 foreach ($liveContent as $sid => $html) {
@@ -116,30 +119,44 @@ class ProposalApplicator
                         $hitSection = $sid;
                     }
                 }
-                if ($totalHits !== 1) {
-                    $this->fail($p, "formatore: before non trovato o non unico ({$totalHits} occorrenze)");
-                    $failed[] = ['id' => $p->id, 'error' => $p->apply_error];
-                    continue;
+                if ($totalHits === 1) {
+                    $liveRes = VerbatimReplacer::replaceUnique($liveContent[$hitSection], $p->before, $p->after);
+                    if ($liveRes['ok']) {
+                        if (!array_key_exists($hitSection, $preSnapshot)) {
+                            $preSnapshot[$hitSection] = $sections->firstWhere('id', $hitSection)->content_html; // PRE-batch
+                        }
+                        $liveContent[$hitSection] = $liveRes['result'];
+                        $manualOk = true;
+                    }
                 }
-                $liveRes = VerbatimReplacer::replaceUnique($liveContent[$hitSection], $p->before, $p->after);
-                if (!$liveRes['ok']) {
-                    $this->fail($p, 'formatore: ' . $liveRes['reason']);
+
+                // 3) Decisione: applicata se sorgente OPPURE manuale hanno attecchito.
+                if (!$srcOk && !$manualOk) {
+                    // Entrambi falliti → fallimento pulito (resta 'approved', scartabile a mano).
+                    $this->fail($p, $totalHits === 0
+                        ? 'sorgente e manuale: before non trovato (nessuna occorrenza verbatim)'
+                        : "manuale: before non univoco ({$totalHits} occorrenze) e sorgente non applicabile");
                     $failed[] = ['id' => $p->id, 'error' => $p->apply_error];
                     continue;
                 }
 
-                // 3) Entrambi ok → applica alle copie di lavoro.
-                $blocks[$idx] = $srcRes['block'];
-                if (!array_key_exists($hitSection, $preSnapshot)) {
-                    $preSnapshot[$hitSection] = $sections->firstWhere('id', $hitSection)->content_html; // PRE-batch
+                // Stato manuale: verbatim ok / da riscrivere a parte (queued) / nessuna sezione (null).
+                $manualStatus = $manualOk ? 'verbatim' : ($sections->isNotEmpty() ? 'queued' : null);
+                $appliedProposals[] = [
+                    'proposal' => $p,
+                    'manual_status' => $manualStatus,
+                    'manual_before' => $manualOk ? $p->before : null,
+                    'manual_after' => $manualOk ? $p->after : null,
+                    'src_ok' => $srcOk,
+                ];
+                if ($manualStatus === 'queued') {
+                    $queuedIds[] = $p->id;
                 }
-                $liveContent[$hitSection] = $liveRes['result'];
-                $appliedProposals[] = ['proposal' => $p, 'section_id' => $hitSection];
             }
 
             if (empty($appliedProposals)) {
                 // Tutte fallite: apply_error già persistito, nessun bump di versione.
-                return ['applied' => 0, 'failed' => $failed, 'version_from' => $current->version, 'version_to' => null, 'blocked' => null];
+                return ['applied' => 0, 'failed' => $failed, 'queued' => [], 'version_from' => $current->version, 'version_to' => null, 'blocked' => null];
             }
 
             // 4) Nuova versione del sorgente (la precedente resta intatta).
@@ -150,7 +167,7 @@ class ProposalApplicator
                 'blocks' => array_values($blocks),
             ]);
 
-            // 5) Backup live (pre-batch) + scrittura del formatore live aggiornato.
+            // 5) Backup live (pre-batch) + scrittura del formatore live aggiornato (sezioni verbatim).
             foreach ($preSnapshot as $sid => $preHtml) {
                 FormatoreSnapshot::create([
                     'course_id' => $course->id,
@@ -162,17 +179,23 @@ class ProposalApplicator
                 InstructorManualSection::where('id', $sid)->update(['content_html' => $liveContent[$sid]]);
             }
 
-            // 6) Proposte → applied + changelog (audit per proposta).
+            // 6) Proposte → applied + changelog (audit per proposta) + esito manuale.
             foreach ($appliedProposals as $ap) {
                 $p = $ap['proposal'];
-                $p->update(['status' => 'applied', 'applied_at' => now(), 'apply_error' => null]);
+                $p->update([
+                    'status' => 'applied', 'applied_at' => now(), 'apply_error' => null,
+                    'manual_status' => $ap['manual_status'],
+                    'manual_before' => $ap['manual_before'],
+                    'manual_after' => $ap['manual_after'],
+                ]);
+                $manualNote = $ap['manual_status'] === 'queued' ? ' [manuale: riscrittura semantica in corso]' : '';
                 CourseChangelog::create([
                     'course_id' => $course->id,
                     'proposal_id' => $p->id,
                     'version_from' => $current->version,
                     'version_to' => $newVersion,
                     'kind' => 'apply',
-                    'summary' => mb_substr($p->before, 0, 120) . ' → ' . mb_substr($p->after, 0, 120),
+                    'summary' => mb_substr($p->before, 0, 120) . ' → ' . mb_substr($p->after, 0, 120) . $manualNote,
                     'approved_by' => $p->reviewed_by,
                     'approved_at' => $p->reviewed_at,
                 ]);
@@ -180,7 +203,64 @@ class ProposalApplicator
 
             $this->regeneratePdf($course, $newSource, $newVersion);
 
-            return ['applied' => count($appliedProposals), 'failed' => $failed, 'version_from' => $current->version, 'version_to' => $newVersion, 'blocked' => null];
+            return ['applied' => count($appliedProposals), 'failed' => $failed, 'queued' => $queuedIds, 'version_from' => $current->version, 'version_to' => $newVersion, 'blocked' => null];
+        });
+
+        // Fuori dalla transazione (le chiamate AI sono lente e NON devono tenere il lock DB):
+        // accoda la riscrittura semantica del manuale per le proposte applicate al solo sorgente.
+        foreach ($result['queued'] ?? [] as $proposalId) {
+            RewriteInstructorManualJob::dispatch($proposalId);
+        }
+
+        return $result;
+    }
+
+    /**
+     * P25.3f — Applica al manuale formatore una sostituzione (manualBefore→manualAfter) prodotta
+     * dalla riscrittura semantica async (RewriteInstructorManualJob), per i casi in cui il `before`
+     * del sorgente NON era verbatim nel manuale. Verbatim o niente sulla sezione; snapshot pre-patch
+     * ancorato alla versione corrente (così il rollback la ripristina). NON crea una nuova versione
+     * del sorgente né un changelog 'apply' (eviterebbe collisioni con la logica di rollback):
+     * l'audit della riscrittura vive su update_proposals.manual_*.
+     *
+     * @return array{ok:bool, reason:?string}
+     */
+    public function applyManualPatch(Course $course, string $sectionId, string $manualBefore, string $manualAfter): array
+    {
+        return DB::transaction(function () use ($course, $sectionId, $manualBefore, $manualAfter) {
+            $section = InstructorManualSection::where('course_id', $course->id)->where('id', $sectionId)->first();
+            if (!$section) {
+                return ['ok' => false, 'reason' => 'sezione manuale non trovata'];
+            }
+
+            $res = VerbatimReplacer::replaceUnique($section->content_html, $manualBefore, $manualAfter);
+            if (!$res['ok']) {
+                return ['ok' => false, 'reason' => $res['reason']];
+            }
+
+            // Snapshot pre-patch ancorato alla versione corrente, SOLO se non già presente: una
+            // eventuale snapshot pre-batch della stessa versione tiene già l'originale (il rollback
+            // restaura dalle snapshot di quella versione → la nostra patch viene annullata con essa).
+            $current = $this->latestSource($course);
+            if ($current) {
+                $exists = FormatoreSnapshot::where('course_id', $course->id)
+                    ->where('version', $current->version)
+                    ->where('instructor_manual_section_id', $section->id)
+                    ->exists();
+                if (!$exists) {
+                    FormatoreSnapshot::create([
+                        'course_id' => $course->id,
+                        'course_source_id' => $current->id,
+                        'version' => $current->version,
+                        'instructor_manual_section_id' => $section->id,
+                        'content_html' => $section->content_html, // pre-patch
+                    ]);
+                }
+            }
+
+            $section->update(['content_html' => $res['result']]);
+
+            return ['ok' => true, 'reason' => null];
         });
     }
 

@@ -221,14 +221,57 @@ class CourseController extends Controller
         $modulePresentation = $module->presentations()->where('status', 'ready')
             ->whereNotNull('published_at')->latest('published_at')->first();
 
+        // V4 — video pubblicato, SOLO se legato alla presentazione pubblicata corrente.
+        $moduleVideo = $modulePresentation
+            ? $module->videos()->where('presentation_id', $modulePresentation->id)
+                ->where('status', 'ready')->whereNotNull('published_at')->latest('published_at')->first()
+            : null;
+
         return view('student.course.module', compact(
             'course', 'module', 'materials', 'quiz', 'finalQuiz',
             'certificationPassed', 'progress', 'prevModule', 'nextModule',
             'canvases', 'isDemo', 'note', 'studentNotes',
             'instructorManualSections', 'instructorNotes', 'teaching',
             'moduleConceptMap', 'moduleConceptMapForked', 'hasModuleDocument',
-            'modulePresentation'
+            'modulePresentation', 'moduleVideo'
         ));
+    }
+
+    /**
+     * V4 — stream del video pubblicato del modulo (player HTML5, Range/seek). Stesso
+     * gate del modulo (checkAccess). Solo il video legato alla presentazione pubblicata corrente.
+     */
+    public function moduleVideoStream(Course $course, Module $module)
+    {
+        $this->checkAccess($course);
+        abort_unless($module->course_id === $course->id, 404);
+
+        $presId = $module->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->value('id');
+        abort_unless($presId, 404);
+
+        $video = $module->videos()->where('presentation_id', $presId)
+            ->where('status', 'ready')->whereNotNull('published_at')->latest('published_at')->first();
+        abort_unless($video && $video->file_path && Storage::disk('local')->exists($video->file_path), 404);
+
+        return response()->file(Storage::disk('local')->path($video->file_path), ['Content-Type' => 'video/mp4']);
+    }
+
+    /** R4 — ricerca PER-VIDEO nel video pubblicato del modulo (corsista). Stesso gate. */
+    public function moduleVideoSearch(Course $course, Module $module, Request $request, \App\Services\Schola\VideoSearchService $search)
+    {
+        $this->checkAccess($course);
+        abort_unless($module->course_id === $course->id, 404);
+        $q = trim($request->input('q', ''));
+        abort_if($q === '', 422, 'Inserisci una ricerca.');
+
+        $presId = $module->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->value('id');
+        $video = $presId ? $module->videos()->where('presentation_id', $presId)
+            ->where('status', 'ready')->whereNotNull('published_at')->latest('published_at')->first() : null;
+        abort_unless($video && $video->video_ai_id, 404);
+
+        return response()->json(['matches' => $search->perVideo($video->video_ai_id, $q)]);
     }
 
     /**
