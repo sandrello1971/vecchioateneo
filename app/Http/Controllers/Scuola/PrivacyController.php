@@ -40,6 +40,26 @@ class PrivacyController extends Controller
             $school->dpa_signed_at ? 'DPA marcato come firmato.' : 'DPA revocato.');
     }
 
+    /**
+     * Firma/revoca il DPA specifico video-AI (sub-processori esterni Whisper/Vision).
+     * Sblocca a livello scuola l'upload di materiali audio/video/foto per tutti i docenti.
+     */
+    public function markVideoAiDpa()
+    {
+        $admin = $this->currentSchoolAdmin();
+        $school = $this->currentSchool();
+
+        $signing = $school->video_ai_dpa_accepted_at === null;
+        $school->update([
+            'video_ai_dpa_accepted_at' => $signing ? now() : null,
+            'video_ai_dpa_accepted_by' => $signing ? $admin->id : null,
+        ]);
+
+        return redirect()->route('scuola.privacy.index')->with('success', $signing
+            ? 'DPA video-AI firmato: i docenti possono ora caricare audio/video/foto.'
+            : 'DPA video-AI revocato: gli upload audio/video/foto sono di nuovo bloccati.');
+    }
+
     /** Avvia la generazione dell'export (job asincrono). */
     public function export()
     {

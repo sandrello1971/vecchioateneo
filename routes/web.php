@@ -373,6 +373,15 @@ Route::prefix('scuola')->name('scuola.')->middleware(['school_admin', 'student.p
     Route::post('/privacy/dpa', [App\Http\Controllers\Scuola\PrivacyController::class, 'markDpa'])->name('privacy.dpa');
     Route::post('/privacy/export', [App\Http\Controllers\Scuola\PrivacyController::class, 'export'])->name('privacy.export');
     Route::get('/privacy/export/download', [App\Http\Controllers\Scuola\PrivacyController::class, 'download'])->name('privacy.export.download');
+    // DPA specifico video-AI (Whisper/Vision): firma/revoca a livello scuola.
+    Route::post('/privacy/video-dpa', [App\Http\Controllers\Scuola\PrivacyController::class, 'markVideoAiDpa'])->name('privacy.video-dpa');
+
+    // Materiali della scuola (segreteria estesa): elenco di tutti i docenti, upload di
+    // scuola (→ Biblioteca), eliminazione. Tutto tenant-scoped su school_id.
+    Route::get('/materiali', [App\Http\Controllers\Scuola\SchoolMaterialController::class, 'index'])->name('materiali.index');
+    Route::get('/materiali/crea', [App\Http\Controllers\Scuola\SchoolMaterialController::class, 'create'])->name('materiali.create');
+    Route::post('/materiali', [App\Http\Controllers\Scuola\SchoolMaterialController::class, 'store'])->name('materiali.store')->middleware('throttle:schola-generate');
+    Route::delete('/materiali/{document}', [App\Http\Controllers\Scuola\SchoolMaterialController::class, 'destroy'])->name('materiali.destroy');
 });
 
 // Logo scuola da storage privato — accessibile a tutti gli utenti della scuola

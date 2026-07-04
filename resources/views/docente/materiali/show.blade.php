@@ -61,7 +61,7 @@
             <p style="font-size:0.82rem; color:#A8521F;">I materiali da foto/PDF non sono condivisibili (distribuzione di testo potenzialmente protetto).</p>
         @else
             <p style="font-size:0.8rem; color:#8A9696; margin-bottom:10px;">
-                @if($document->share_scope === 'all') Attualmente condiviso con <strong>tutti i docenti</strong>.
+                @if($document->share_scope === 'all') Attualmente condiviso con <strong>tutta la scuola</strong>.
                 @elseif($document->share_scope === 'subject') Attualmente condiviso con i <strong>docenti della stessa materia</strong> nella tua scuola.
                 @else Attualmente <strong>privato</strong>. @endif
                 Chi ha accesso può vederlo, importarlo e trovarlo con Minerva.
@@ -73,7 +73,7 @@
                     <select name="scope" style="padding:8px 10px; border:1px solid #C8D0D0; border-radius:8px; font-size:0.82rem;">
                         <option value="none" @selected($document->share_scope === null)>Privato</option>
                         <option value="subject" @selected($document->share_scope === 'subject') @disabled(!$document->subject_id)>Stessa materia (stessa scuola)@if(!$document->subject_id) — assegna una materia @endif</option>
-                        <option value="all" @selected($document->share_scope === 'all')>Tutti i docenti</option>
+                        <option value="all" @selected($document->share_scope === 'all')>Tutta la scuola</option>
                     </select>
                 </div>
                 <label style="font-size:0.78rem; color:#4A5252; display:flex; align-items:center; gap:6px;">

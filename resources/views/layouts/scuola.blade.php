@@ -57,6 +57,7 @@
         <a href="{{ route('scuola.docenti.index') }}" class="nav-item {{ request()->routeIs('scuola.docenti.*') ? 'active' : '' }}"><span>&#127979;</span> Docenti</a>
         <a href="{{ route('scuola.studenti.index') }}" class="nav-item {{ request()->routeIs('scuola.studenti.*') ? 'active' : '' }}"><span>&#127891;</span> Studenti</a>
         <a href="{{ route('scuola.classi.index') }}" class="nav-item {{ request()->routeIs('scuola.classi.*') || request()->routeIs('scuola.cattedre.*') ? 'active' : '' }}"><span>&#128218;</span> Classi</a>
+        <a href="{{ route('scuola.materiali.index') }}" class="nav-item {{ request()->routeIs('scuola.materiali.*') ? 'active' : '' }}"><span>&#128196;</span> Materiali</a>
         <a href="{{ route('scuola.privacy.index') }}" class="nav-item {{ request()->routeIs('scuola.privacy.*') ? 'active' : '' }}"><span>&#128274;</span> Privacy</a>
     </nav>
     </div>{{-- /.sidebar-scroll --}}

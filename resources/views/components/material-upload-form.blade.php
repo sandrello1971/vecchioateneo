@@ -4,7 +4,9 @@
     'subjects' => null,    // solo standalone: select Materia
     'videoAiDpaMissing' => false,
     'externalTypes' => [],
+    'action' => null,      // endpoint di upload; default = materiali del docente
 ])
+@php $formAction = $action ?? route('docente.materials.store'); @endphp
 @php
     // In contesto lezione/argomento la materia è ereditata (nessun select) e il
     // redirect torna al contesto: lo store lo decide dai campi lesson_id/topic_id.
@@ -13,7 +15,7 @@
 <div x-data="materialForm()">
     @if($errors->any())<div style="margin-bottom:14px; padding:12px 16px; background:#FDECE2; border:1px solid #E28A53; border-radius:8px; color:#A8521F; font-size:0.85rem;"><ul style="margin:0 0 0 18px;">@foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul></div>@endif
 
-    <form method="POST" action="{{ route('docente.materials.store') }}" enctype="multipart/form-data" data-async @submit="prepare($event)"
+    <form method="POST" action="{{ $formAction }}" enctype="multipart/form-data" data-async @submit="prepare($event)"
           style="background:white; border:1px solid #C8D0D0; border-radius:10px; padding:22px;">
         @csrf
         @if($lesson)<input type="hidden" name="lesson_id" value="{{ $lesson->id }}">@endif

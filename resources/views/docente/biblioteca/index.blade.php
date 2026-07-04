@@ -6,10 +6,36 @@
     $typeLabels = ['transcript'=>'Trascrizione','summary'=>'Riassunto','mindmap'=>'Mappa mentale','conceptmap'=>'Mappa concettuale','quiz'=>'Quiz','outline'=>'Scaletta'];
 @endphp
 <div style="max-width:980px;">
-    <h1 style="font-size:1.4rem; font-weight:700; color:#1A1F1F;">Biblioteca docenti</h1>
-    <p style="color:#8A9696; font-size:0.875rem; margin-bottom:16px;">Artefatti condivisi dai colleghi. Duplica una copia indipendente nella tua libreria.</p>
+    <h1 style="font-size:1.4rem; font-weight:700; color:#1A1F1F;">Biblioteca</h1>
+    <p style="color:#8A9696; font-size:0.875rem; margin-bottom:16px;">Materiali della scuola e dei colleghi + artefatti condivisi. Importa un materiale per usarlo nelle tue lezioni; duplica un artefatto nella tua libreria.</p>
 
     @if(session('success'))<div style="margin-bottom:12px; padding:10px 14px; background:#E8F5F5; border-left:4px solid #55B1AE; border-radius:6px; color:#3A8C89; font-size:0.85rem;">{{ session('success') }}</div>@endif
+    @if(session('error'))<div style="margin-bottom:12px; padding:10px 14px; background:#FDECE2; border-left:4px solid #E28A53; border-radius:6px; color:#A8521F; font-size:0.85rem;">{{ session('error') }}</div>@endif
+
+    {{-- ===== Materiali (grezzi): di scuola + condivisi ===== --}}
+    <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em; margin:4px 0 10px;">Materiali</div>
+    @forelse($materials as $m)
+        <div style="display:flex; align-items:center; gap:12px; padding:12px 16px; background:white; border:1px solid #C8D0D0; border-radius:10px; margin-bottom:8px;">
+            <span style="flex:1;">
+                <a href="{{ route('docente.materials.shared.show', $m) }}" style="display:block; font-weight:600; color:#1A1F1F; font-size:0.92rem; text-decoration:none;">{{ $m->title }}</a>
+                <span style="font-size:0.78rem; color:#8A9696;">
+                    {{ $m->source_type }} · {{ $m->subject->name ?? 'senza materia' }} ·
+                    @if($m->is_school_material) <span style="color:#3A8C89;">di scuola</span>
+                    @elseif($m->share_scope === 'all') di {{ $m->teacher->name ?? '—' }} · <span style="color:#3A8C89;">scuola</span>
+                    @else di {{ $m->teacher->name ?? '—' }} · <span style="color:#3A8C89;">materia</span>@endif
+                </span>
+            </span>
+            <form method="POST" action="{{ route('docente.materials.shared.import', $m) }}" onsubmit="this.querySelector('button').disabled=true;">
+                @csrf
+                <button type="submit" style="padding:7px 14px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.8rem; font-weight:600; cursor:pointer;">Importa</button>
+            </form>
+        </div>
+    @empty
+        <p style="color:#8A9696; font-size:0.85rem; margin-bottom:8px;">Nessun materiale condiviso disponibile per te al momento.</p>
+    @endforelse
+
+    {{-- ===== Artefatti condivisi ===== --}}
+    <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em; margin:22px 0 10px;">Artefatti</div>
 
     {{-- Filtri --}}
     <form method="GET" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">

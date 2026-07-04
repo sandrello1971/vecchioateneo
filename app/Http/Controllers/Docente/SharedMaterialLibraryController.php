@@ -31,27 +31,10 @@ class SharedMaterialLibraryController extends Controller
         );
     }
 
-    public function index(Request $request)
+    // I materiali condivisi sono ora assorbiti nella Biblioteca unificata.
+    public function index()
     {
-        $teacher = $this->teacher();
-
-        $query = TeachingDocument::visibleAsSharedTo($teacher)
-            ->with(['teacher:id,name', 'subject:id,name']);
-
-        if ($request->filled('subject_id')) {
-            $query->where('subject_id', $request->input('subject_id'));
-        }
-        if ($request->filled('source_type')) {
-            $query->where('source_type', $request->input('source_type'));
-        }
-        if ($request->filled('q')) {
-            $query->where('title', 'ILIKE', '%' . $request->input('q') . '%');
-        }
-
-        $documents = $query->orderByDesc('created_at')->get();
-        $subjects = Subject::orderBy('name')->get();
-
-        return view('docente.materiali-condivisi.index', compact('documents', 'subjects'));
+        return redirect()->route('docente.biblioteca.index');
     }
 
     public function show(TeachingDocument $document)

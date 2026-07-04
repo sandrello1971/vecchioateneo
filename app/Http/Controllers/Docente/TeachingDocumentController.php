@@ -9,6 +9,7 @@ use App\Models\Student;
 use App\Models\Subject;
 use App\Models\TeachingDocument;
 use App\Models\Topic;
+use App\Services\Schola\TeachingDocumentUploader;
 use App\Support\VideoAiConsent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -58,7 +59,7 @@ class TeachingDocumentController extends Controller
         return view('docente.materiali.create', compact('subjects', 'videoAiDpaMissing', 'externalTypes'));
     }
 
-    public function store(Request $request)
+    public function store(Request $request, TeachingDocumentUploader $uploader)
     {
         $base = $request->validate([
             'title' => 'required|string|max:255',
@@ -86,94 +87,21 @@ class TeachingDocumentController extends Controller
             $subjectId = $topic->subject_id;
         }
 
-        // Validazioni specifiche per tipo sorgente.
-        match ($base['source_type']) {
-            'audio' => $request->validate([
-                // Audio E video: si trascrive la traccia audio (Whisper gestisce i
-                // contenitori video via ffmpeg). Gli m4a sono contenitori MP4 e PHP
-                // li rileva come audio/mp4 o video/mp4: niente regola `mimes` (che
-                // mappa l'estensione a un set rigido), ma estensione esplicita +
-                // lista mime esplicita (audio e video). Limite invariato 200 MB.
-                'file' => [
-                    'required', 'file', 'max:204800',
-                    'extensions:mp3,m4a,wav,ogg,mp4,mov,mpeg,avi,webm',
-                    'mimetypes:'
-                        . 'audio/mpeg,audio/mp3,audio/x-mp3,'
-                        . 'audio/mp4,audio/x-m4a,audio/m4a,'
-                        . 'audio/wav,audio/x-wav,audio/wave,audio/vnd.wave,'
-                        . 'audio/ogg,application/ogg,video/ogg,'
-                        . 'audio/webm,'
-                        . 'video/mp4,video/quicktime,video/mpeg,video/x-msvideo,video/avi,video/msvideo,video/webm',
-                ],
-            ], [], ['file' => 'file audio o video']),
-            'pdf' => $request->validate([
-                'file' => 'required|file|mimes:pdf|max:51200', // 50 MB
-            ]),
-            'docx' => $request->validate([
-                'file' => 'required|file|mimes:docx,doc|max:51200',
-            ]),
-            'photos' => $request->validate([
-                'photos' => 'required|array|min:1|max:20',
-                'photos.*' => 'image|mimes:jpg,jpeg,png|max:10240', // 10 MB/foto
-            ], [], ['photos' => 'foto']),
-            'youtube' => $request->validate([
-                'source_url' => ['required', 'url', 'max:500', 'regex:#(youtube\.com|youtu\.be)#i'],
-            ], ['source_url.regex' => 'Inserisci un URL YouTube valido.']),
-            'text' => $request->validate([
-                'text_content' => 'required|string',
-            ]),
-        };
+        $owner = Student::find($this->teacherId());
 
-        // R5 — gate DPA: in ambito scolastico i materiali che passano da sub-processori
-        // esterni (audio/video→Whisper, foto→Vision) richiedono il consenso registrato.
-        if (VideoAiConsent::blocked(Student::find($this->teacherId()), $base['source_type'])) {
+        // R5 — gate DPA: audio/video/foto passano da sub-processori esterni → serve il
+        // consenso video-AI della scuola (firmato dalla segreteria).
+        if (VideoAiConsent::blocked($owner, $base['source_type'])) {
             return back()->withInput()->with('error', VideoAiConsent::MESSAGE);
         }
 
-        $doc = TeachingDocument::create([
-            'teacher_id' => $this->teacherId(),
+        $doc = $uploader->handle($request, $owner, [
             'title' => $base['title'],
             'source_type' => $base['source_type'],
             'subject_id' => $subjectId,
             'lesson_id' => $lesson?->id, // caricato dalla lezione → già classificato; altrimenti pool
-            'tags' => $this->parseTags($request->input('tags')),
-            'status' => 'pending',
+            'tags' => $request->input('tags'),
         ]);
-
-        $dir = "teaching-documents/{$doc->teacher_id}/{$doc->id}";
-        $sourceFiles = [];
-        $sourceUrl = null;
-
-        switch ($base['source_type']) {
-            case 'audio':
-            case 'pdf':
-            case 'docx':
-                $ext = $request->file('file')->getClientOriginalExtension() ?: $base['source_type'];
-                $sourceFiles[] = $request->file('file')->storeAs($dir, "source.{$ext}", 'local');
-                break;
-
-            case 'photos':
-                foreach (array_values($request->file('photos')) as $i => $photo) {
-                    $ext = $photo->getClientOriginalExtension() ?: 'jpg';
-                    $name = sprintf('photo_%02d.%s', $i, $ext); // ordine preservato dall'invio
-                    $sourceFiles[] = $photo->storeAs($dir, $name, 'local');
-                }
-                break;
-
-            case 'youtube':
-                $sourceUrl = $request->input('source_url');
-                break;
-
-            case 'text':
-                $path = "{$dir}/source.md";
-                Storage::disk('local')->put($path, $request->input('text_content'));
-                $sourceFiles[] = $path;
-                break;
-        }
-
-        $doc->update(['source_files' => $sourceFiles ?: null, 'source_url' => $sourceUrl]);
-
-        ExtractTeachingDocumentJob::dispatch($doc->id)->afterResponse();
 
         $msg = 'Materiale caricato. Estrazione del testo in corso…';
         if ($lesson) {

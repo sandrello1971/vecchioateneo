@@ -6,6 +6,7 @@ use App\Jobs\EmbedDocumentChunksJob;
 use App\Models\ArtifactPublication;
 use App\Models\DocumentRag;
 use App\Models\TeachingArtifact;
+use App\Models\TeachingDocument;
 use App\Services\EmbeddingService;
 use App\Support\PgVector;
 use Illuminate\Support\Collection;
@@ -162,6 +163,26 @@ class ArtifactRagIngestor
             ->where('scope', 'teacher_shared')
             ->where('metadata->document_id', $documentId)
             ->delete();
+    }
+
+    /**
+     * Rimozione completa dei chunk di un materiale alla sua cancellazione (admin):
+     * i teacher_shared (per document_id) e i teacher_private/teacher_shared legati ai
+     * suoi artefatti (transcript). Idempotente.
+     */
+    public function purgeDocument(TeachingDocument $document): int
+    {
+        $removed = $this->purgeTeacherShared($document->id);
+
+        $artifactIds = $document->artifacts()->pluck('id')->all();
+        if (!empty($artifactIds)) {
+            $removed += DocumentRag::query()
+                ->whereIn('scope', ['teacher_private', 'teacher_shared'])
+                ->whereIn('metadata->artifact_id', $artifactIds)
+                ->delete();
+        }
+
+        return $removed;
     }
 
     // ===== Costruzione chunk =====

@@ -6,6 +6,7 @@ use App\Jobs\EmbedDocumentChunksJob;
 use App\Models\Course;
 use App\Models\DocumentRag;
 use App\Models\Module;
+use App\Models\Student;
 use App\Support\PgVector;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -228,15 +229,21 @@ class RagService
         }
 
         if ($teacherId !== null) {
+            $teacherSchoolId = Student::whereKey($teacherId)->value('school_id');
+
             $w->orWhere(function ($t) use ($teacherId) {
                 $t->where('scope', 'teacher_private')->where('teacher_id', $teacherId);
             });
 
-            $w->orWhere(function ($ts) use ($teacherId) {
+            $w->orWhere(function ($ts) use ($teacherId, $teacherSchoolId) {
                 $ts->where('scope', 'teacher_shared')
                     ->where('teacher_id', '!=', $teacherId) // i propri già in teacher_private
-                    ->where(function ($rule) use ($teacherId) {
-                        $rule->where('metadata->share_scope', 'all')
+                    ->where(function ($rule) use ($teacherId, $teacherSchoolId) {
+                        // Tutta la scuola (o materiale admin di scuola): stesso school_id.
+                        $rule->where(function ($all) use ($teacherSchoolId) {
+                            $all->where('metadata->share_scope', 'all')
+                                ->where('metadata->school_id', $teacherSchoolId);
+                        })
                             ->orWhere(function ($subj) use ($teacherId) {
                                 $subj->where('metadata->share_scope', 'subject')
                                     ->whereExists(function ($ex) use ($teacherId) {

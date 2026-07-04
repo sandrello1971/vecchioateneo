@@ -40,9 +40,13 @@ class MaterialSharingController extends Controller
 
         $teacher = Student::findOrFail(session('student_id'));
 
-        // Ambito materia: serve una materia assegnata e una scuola (il perimetro).
-        if ($scope === 'subject' && (!$document->subject_id || !$teacher->school_id)) {
-            return back()->with('error', 'Per condividere con la stessa materia servono una materia assegnata al materiale e una scuola.');
+        // La condivisione (materia o scuola) vive nel perimetro di una scuola.
+        if (!$teacher->school_id) {
+            return back()->with('error', 'La condivisione dei materiali è disponibile solo per i docenti di una scuola.');
+        }
+        // Ambito materia: serve anche una materia assegnata.
+        if ($scope === 'subject' && !$document->subject_id) {
+            return back()->with('error', 'Per condividere con la stessa materia assegna prima una materia al materiale.');
         }
 
         // BLOCCO HARD copyright: distribuzione di testo integrale da foto/PDF.
@@ -60,14 +64,16 @@ class MaterialSharingController extends Controller
             $teacher->update(['library_rights_ack_at' => now()]);
         }
 
+        // Il perimetro scuola è già su document->school_id (impostato alla creazione).
+        // Allineiamo per sicurezza sui materiali storici privi di school_id.
         $document->update([
             'share_scope' => $scope,
-            'shared_school_id' => $scope === 'subject' ? $teacher->school_id : null,
+            'school_id' => $document->school_id ?? $teacher->school_id,
         ]);
 
         IngestMaterialSharedJob::dispatch($document->id)->afterResponse();
 
-        $label = $scope === 'all' ? 'tutti i docenti' : 'i docenti della stessa materia';
+        $label = $scope === 'all' ? 'tutta la scuola' : 'i docenti della stessa materia';
 
         return back()->with('success', "Materiale condiviso con {$label}.");
     }

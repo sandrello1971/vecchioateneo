@@ -56,6 +56,12 @@ class ExtractTeachingDocumentJob implements ShouldQueue
             ]);
 
             $this->ensureTranscriptArtifact($doc, $result);
+
+            // Materiale già condiviso o di scuola (admin): indicizzalo anche come
+            // teacher_shared così è cercabile via Minerva dai docenti idonei.
+            if ($doc->isShared() || $doc->is_school_material) {
+                IngestMaterialSharedJob::dispatch($doc->id);
+            }
         } catch (Throwable $e) {
             Log::warning('[schola] estrazione teaching_document fallita', [
                 'document_id' => $doc->id,

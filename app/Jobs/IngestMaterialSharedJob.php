@@ -25,8 +25,8 @@ class IngestMaterialSharedJob implements ShouldQueue
     {
         $doc = TeachingDocument::find($this->documentId);
 
-        // Non più condiviso o non pronto: assicura la rimozione ed esce.
-        if (!$doc || !$doc->isShared() || $doc->status !== 'ready') {
+        // Non indicizzabile (non pronto, o né condiviso né materiale di scuola): rimuove ed esce.
+        if (!$doc || $doc->status !== 'ready' || (!$doc->isShared() && !$doc->is_school_material)) {
             $ingestor->purgeTeacherShared($this->documentId);
 
             return;
@@ -42,12 +42,15 @@ class IngestMaterialSharedJob implements ShouldQueue
             return;
         }
 
+        // Materiale di scuola dell'admin senza scope esplicito → visibile a tutta la scuola.
+        $shareScope = $doc->share_scope ?? ($doc->is_school_material ? 'all' : 'all');
+
         $ingestor->ingestTeacherShared(
             $transcript,
             $doc->id,
-            $doc->share_scope,
+            $shareScope,
             $doc->subject_id,
-            $doc->shared_school_id,
+            $doc->school_id,
         );
     }
 }
