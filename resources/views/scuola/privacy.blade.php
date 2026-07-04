@@ -26,6 +26,28 @@
         </form>
     </div>
 
+    {{-- DPA video-AI (sub-processori esterni) --}}
+    <div style="background:white; border:1px solid #C8D0D0; border-radius:10px; padding:18px; margin-bottom:16px;">
+        <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">DPA video-AI (Whisper / Vision)</div>
+        <p style="font-size:0.83rem; color:#4A5252; margin:0 0 12px;">
+            Consenso specifico per i materiali che passano da <strong>sub-processori esterni</strong>:
+            audio/video → trascrizione Whisper, foto/PDF scansionati → Vision. Necessario prima che i docenti
+            possano caricare materiali <strong>audio, video o foto</strong>. Distinto dal DPA generale.
+        </p>
+        @if($school->hasVideoAiDpa())
+            <div style="font-size:0.9rem; color:#3A8C89; margin-bottom:10px;">&#10003; DPA video-AI firmato il {{ $school->video_ai_dpa_accepted_at->format('d/m/Y') }}.</div>
+        @else
+            <div style="background:#FBF3E2; border-left:4px solid #E2A653; border-radius:6px; padding:10px 14px; color:#9A7B2E; font-size:0.85rem; margin-bottom:10px;">
+                &#9888; DPA video-AI non firmato: i docenti <strong>non</strong> possono caricare audio/video/foto. PDF, Word e testo restano disponibili.
+            </div>
+        @endif
+        <form method="POST" action="{{ route('scuola.privacy.video-dpa') }}">@csrf
+            <button style="padding:8px 16px; background:{{ $school->hasVideoAiDpa() ? 'white' : '#55B1AE' }}; color:{{ $school->hasVideoAiDpa() ? '#8A9696' : 'white' }}; border:1px solid {{ $school->hasVideoAiDpa() ? '#C8D0D0' : '#55B1AE' }}; border-radius:8px; font-size:0.82rem; font-weight:600; cursor:pointer;">
+                {{ $school->hasVideoAiDpa() ? 'Revoca DPA video-AI' : 'Firma DPA video-AI' }}
+            </button>
+        </form>
+    </div>
+
     {{-- Export dati --}}
     <div style="background:white; border:1px solid #C8D0D0; border-radius:10px; padding:18px; margin-bottom:16px;">
         <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">Export dati scuola</div>

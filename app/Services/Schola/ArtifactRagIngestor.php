@@ -6,6 +6,7 @@ use App\Jobs\EmbedDocumentChunksJob;
 use App\Models\ArtifactPublication;
 use App\Models\DocumentRag;
 use App\Models\TeachingArtifact;
+use App\Models\TeachingDocument;
 use App\Services\EmbeddingService;
 use App\Support\PgVector;
 use Illuminate\Support\Collection;
@@ -114,6 +115,74 @@ class ArtifactRagIngestor
             ->where('scope', 'class')
             ->where('metadata->publication_id', $publicationId)
             ->delete();
+    }
+
+    // ===== teacher_shared (condivisione materiale tra docenti) =====
+
+    /**
+     * Indicizza il transcript di un materiale CONDIVISO come scope='teacher_shared'.
+     * L'ambito (share_scope + subject_id + school_id) viaggia nel metadata: il
+     * retrieval decide chi lo pesca. Idempotente sul documento (re-share sostituisce).
+     */
+    public function ingestTeacherShared(
+        TeachingArtifact $transcript,
+        string $documentId,
+        string $shareScope,
+        ?string $subjectId,
+        ?string $sharedSchoolId
+    ): int {
+        $this->purgeTeacherShared($documentId);
+
+        $chunks = $this->buildChunks($transcript);
+        if (empty($chunks)) {
+            return 0;
+        }
+
+        $rows = $this->persistChunks($transcript, $chunks, [
+            'scope' => 'teacher_shared',
+            'school_class_id' => null,
+            'teacher_id' => $transcript->teacher_id,
+        ], [
+            'document_id' => $documentId,
+            'share_scope' => $shareScope,
+            'subject_id' => $subjectId,
+            'school_id' => $sharedSchoolId,
+        ]);
+
+        $this->embedBestEffort($rows);
+
+        return $rows->count();
+    }
+
+    /**
+     * Rimuove i chunk teacher_shared di un materiale (unshare / re-share). Idempotente.
+     */
+    public function purgeTeacherShared(string $documentId): int
+    {
+        return DocumentRag::query()
+            ->where('scope', 'teacher_shared')
+            ->where('metadata->document_id', $documentId)
+            ->delete();
+    }
+
+    /**
+     * Rimozione completa dei chunk di un materiale alla sua cancellazione (admin):
+     * i teacher_shared (per document_id) e i teacher_private/teacher_shared legati ai
+     * suoi artefatti (transcript). Idempotente.
+     */
+    public function purgeDocument(TeachingDocument $document): int
+    {
+        $removed = $this->purgeTeacherShared($document->id);
+
+        $artifactIds = $document->artifacts()->pluck('id')->all();
+        if (!empty($artifactIds)) {
+            $removed += DocumentRag::query()
+                ->whereIn('scope', ['teacher_private', 'teacher_shared'])
+                ->whereIn('metadata->artifact_id', $artifactIds)
+                ->delete();
+        }
+
+        return $removed;
     }
 
     // ===== Costruzione chunk =====
@@ -240,6 +309,7 @@ class ArtifactRagIngestor
         $rows = collect();
         foreach ($chunks as $i => $chunk) {
             $rows->push(DocumentRag::create(array_merge($scopeCols, [
+                'subject_id' => $artifact->subject_id, // materia del materiale/artefatto
                 'title' => $artifact->title,
                 'content' => $chunk['content'],
                 'chunk_index' => $i,

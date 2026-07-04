@@ -23,7 +23,7 @@ class GenerateLessonPresentationJob implements ShouldQueue
     public int $timeout = 300;
     public int $tries = 1; // retry esplicito (rigenerazione dall'UI)
 
-    public function __construct(public string $presentationId) {}
+    public function __construct(public string $presentationId, public ?string $instruction = null) {}
 
     public function handle(LessonPresentationService $service): void
     {
@@ -36,7 +36,10 @@ class GenerateLessonPresentationJob implements ShouldQueue
         $presentation->update(['status' => 'generating']);
 
         try {
-            $result = $service->build($presentation);
+            // S2: con istruzione → correzione mirata della spec; altrimenti generazione.
+            $result = $this->instruction !== null
+                ? $service->editSpec($presentation, $this->instruction)
+                : $service->build($presentation);
 
             // Rimuove il file precedente se sostituito (rigenerazione).
             if ($oldPath && $oldPath !== $result['file_path'] && Storage::disk('local')->exists($oldPath)) {
@@ -47,6 +50,7 @@ class GenerateLessonPresentationJob implements ShouldQueue
                 'file_path' => $result['file_path'],
                 'status' => 'ready',
                 'generation_meta' => $result['meta'],
+                'spec' => $result['spec'] ?? null, // S0: spec persistita per la correzione via prompt
             ]);
         } catch (Throwable $e) {
             Log::warning('[schola] generazione presentazione fallita', [

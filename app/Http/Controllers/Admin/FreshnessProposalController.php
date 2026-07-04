@@ -62,6 +62,14 @@ class FreshnessProposalController extends Controller
             ->with('freshnessConfig')
             ->withCount(['updateProposals as approved_count' => fn ($q) => $q
                 ->where('status', 'approved')->where('content_source', $source)])
+            // P25.3f — proposte 'approved' rimaste BLOCCATE (apply_error): nessun target ha
+            // attecchito. Servono all'escape hatch "scarta bloccate".
+            ->withCount(['updateProposals as stuck_count' => fn ($q) => $q
+                ->where('status', 'approved')->where('content_source', $source)->whereNotNull('apply_error')])
+            // P25.3f — manuale formatore DA RIVEDERE a mano: la riscrittura semantica non ha
+            // trovato/ancorato il fatto (unmatched) o è andata in errore (failed).
+            ->withCount(['updateProposals as manual_attention_count' => fn ($q) => $q
+                ->where('content_source', 'instructor')->whereIn('manual_status', ['unmatched', 'failed'])])
             ->orderBy('name')
             ->get();
 
@@ -200,8 +208,13 @@ class FreshnessProposalController extends Controller
         if ($res['version_to']) {
             $msg .= " (v{$res['version_from']} → v{$res['version_to']})";
         }
+        // P25.3f — manuale formatore disaccoppiato: i casi senza match verbatim non bloccano
+        // più, vanno in riscrittura semantica async (Livello 2).
+        if (!empty($res['queued'])) {
+            $msg .= '. ' . count($res['queued']) . ' in riscrittura semantica del manuale (in background)';
+        }
         if (!empty($res['failed'])) {
-            $msg .= '. ' . count($res['failed']) . ' non applicate (before non trovato/non unico).';
+            $msg .= '. ' . count($res['failed']) . ' non applicate (before non trovato né nel sorgente né nel manuale)';
         }
 
         return back()->with('success', $msg . '.');
@@ -280,7 +293,10 @@ class FreshnessProposalController extends Controller
      */
     public function reject(UpdateProposal $proposal, CoordinatedMatchService $coord)
     {
-        abort_unless(in_array($proposal->status, ['pending', 'matched'], true), 422, 'La proposta non è in uno stato rifiutabile.');
+        // P25.3f — escape hatch: oltre a pending/matched si può scartare anche una proposta
+        // 'approved' rimasta bloccata (es. before non applicabile né a sorgente né a manuale),
+        // così la coda di applicazione non resta inchiodata.
+        abort_unless(in_array($proposal->status, ['pending', 'matched', 'approved'], true), 422, 'La proposta non è in uno stato rifiutabile.');
 
         $proposal->update([
             'status' => 'rejected',
@@ -293,6 +309,31 @@ class FreshnessProposalController extends Controller
         }
 
         return back()->with('success', $proposal->wasChanged() ? 'Proposta scartata.' : 'Proposta scartata.');
+    }
+
+    /**
+     * P25.3f — Escape hatch di corso: scarta in blocco le proposte 'approved' rimaste BLOCCATE
+     * (apply_error valorizzato: nessun target ha attecchito) della sorgente attiva, così il
+     * pulsante "Applica" non resta inchiodato. Le figlie coordinate vengono orfanate.
+     */
+    public function rejectStuck(Request $request, Course $course, CoordinatedMatchService $coord)
+    {
+        $source = $this->resolveSource($request);
+
+        $stuck = UpdateProposal::where('course_id', $course->id)
+            ->where('content_source', $source)
+            ->where('status', 'approved')
+            ->whereNotNull('apply_error')
+            ->get();
+
+        foreach ($stuck as $p) {
+            $p->update(['status' => 'rejected', 'reviewed_by' => $this->adminId(), 'reviewed_at' => now()]);
+            if ($p->content_source === 'instructor') {
+                $coord->orphanChildrenOf($p, 'Proposta formatore bloccata scartata');
+            }
+        }
+
+        return back()->with('success', "Scartate {$stuck->count()} proposte bloccate su «{$course->name}».");
     }
 
     /**

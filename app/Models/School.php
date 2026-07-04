@@ -14,13 +14,24 @@ class School extends Model
     protected $fillable = [
         'name', 'slug', 'type', 'city', 'settings',
         'allow_professor_create_classes', 'status', 'dpa_signed_at',
+        'video_ai_dpa_accepted_at', 'video_ai_dpa_accepted_by',
     ];
 
     protected $casts = [
         'settings' => 'array',
         'allow_professor_create_classes' => 'boolean',
         'dpa_signed_at' => 'datetime',
+        'video_ai_dpa_accepted_at' => 'datetime',
     ];
+
+    /**
+     * R5 — la scuola ha accettato il DPA per i sub-processori esterni del video-AI
+     * (Whisper/Vision)? Gate per i materiali Schola audio/video/foto.
+     */
+    public function hasVideoAiDpa(): bool
+    {
+        return $this->video_ai_dpa_accepted_at !== null;
+    }
 
     public function isSuspended(): bool
     {

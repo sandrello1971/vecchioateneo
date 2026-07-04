@@ -68,12 +68,11 @@
             <span>&#128214;</span> Argomenti
         </a>
         <a href="{{ route('docente.materials.index') }}"
-           class="nav-item {{ request()->routeIs('docente.materials.*') ? 'active' : '' }}">
+           class="nav-item {{ request()->routeIs('docente.materials.*') && !request()->routeIs('docente.materials.shared.*') ? 'active' : '' }}">
             <span>&#128196;</span> Materiali
         </a>
-        {{-- Voce del prossimo pacchetto: visibile ma disabilitata --}}
         <a href="{{ route('docente.biblioteca.index') }}"
-           class="nav-item {{ request()->routeIs('docente.biblioteca.*') ? 'active' : '' }}">
+           class="nav-item {{ request()->routeIs('docente.biblioteca.*') || request()->routeIs('docente.materials.shared.*') ? 'active' : '' }}">
             <span>&#127963;</span> Biblioteca
         </a>
     </nav>

@@ -142,6 +142,7 @@ class LessonPresentationTest extends TestCase
             $m->shouldReceive('build')->once()->andReturn([
                 'file_path' => 'lesson-presentations/x/pres.pptx',
                 'meta' => ['model' => 'claude-sonnet-4-5', 'slides' => 5, 'filename' => 'le-cause.pptx'],
+                'spec' => ['theme' => ['ink' => '0A0A0A'], 'slides' => [['layout' => 'cover', 'title' => 'T']]],
             ]);
         });
 
@@ -151,6 +152,8 @@ class LessonPresentationTest extends TestCase
         $this->assertSame('ready', $pres->status);
         $this->assertSame('lesson-presentations/x/pres.pptx', $pres->file_path);
         $this->assertSame(5, $pres->generation_meta['slides']);
+        // S0: la spec completa viene persistita (abilita la correzione via prompt).
+        $this->assertSame('cover', $pres->spec['slides'][0]['layout']);
     }
 
     public function test_job_failed_records_reason(): void
@@ -226,7 +229,8 @@ class LessonPresentationTest extends TestCase
         $this->enroll($class, $student);
         $lesson = $this->lesson($prof);
         $this->publishLesson($lesson, $class);
-        $this->readyPresentation($lesson);
+        // Bi-versione: lo studente vede solo la presentazione PUBBLICATA.
+        $this->readyPresentation($lesson)->update(['published_at' => now()]);
 
         $this->asUser($student)->get(route('student.classes.lesson.presentation', [$class, $lesson]))
             ->assertOk()->assertDownload('le-cause.pptx');

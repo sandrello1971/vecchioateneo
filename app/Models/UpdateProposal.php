@@ -36,6 +36,10 @@ class UpdateProposal extends Model
         'reviewed_at',
         'applied_at',
         'apply_error',
+        // P25.3f — esito applicazione sul manuale formatore (disaccoppiato dal sorgente)
+        'manual_status',
+        'manual_before',
+        'manual_after',
         // P25.B-b — coordinamento formatore→discente
         'parent_proposal_id',
         'origin',

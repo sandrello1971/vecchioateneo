@@ -52,6 +52,57 @@
             ])
         @endif
 
+        {{-- V4/R4 — video NARRATO generato del modulo (player) + ricerca per-video con seek. --}}
+        @if(!empty($moduleVideo))
+            <div style="background:white; border-radius:12px; padding:20px 24px; margin-bottom:20px;"
+                 x-data="genVideoSearch('{{ route('student.module.video.search', [$course->slug, $module->id]) }}')">
+                <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">🎬 Video narrato del modulo</div>
+                <video x-ref="player" controls preload="metadata" style="width:100%; border-radius:8px; background:#0A0A0A; aspect-ratio:16/9;"
+                       src="{{ route('student.module.video', [$course->slug, $module->id]) }}"></video>
+
+                <form @submit.prevent="run()" style="margin-top:12px; display:flex; gap:6px;">
+                    <input x-model="q" type="text" placeholder="Cerca in questo video (parlato e schermo)…"
+                           style="flex:1; padding:8px 10px; border:1px solid #C8D0D0; border-radius:8px; font-size:0.85rem;">
+                    <button style="padding:8px 16px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">Cerca</button>
+                </form>
+                <p x-show="loading" style="margin-top:8px; font-size:0.82rem; color:#8A9696;">Ricerca…</p>
+                <p x-show="done && !results.length" style="margin-top:8px; font-size:0.82rem; color:#8A9696;">Nessun riscontro in questo video.</p>
+                <ul x-show="results.length" style="margin-top:8px; list-style:none; padding:0; display:flex; flex-direction:column; gap:4px;">
+                    <template x-for="m in results" :key="m.start + '_' + m.text.slice(0,12)">
+                        <li @click="seek(m.start)" style="cursor:pointer; padding:7px 10px; background:#F4F6F6; border-radius:7px; font-size:0.82rem; color:#4A5252;">
+                            <span style="font-weight:700; color:#3A8C89;" x-text="fmt(m.start)"></span>
+                            <span style="font-size:0.68rem; color:#8A9696;" x-text="m.type === 'frame' ? ' schermo' : ' parlato'"></span>
+                            — <span x-text="m.text"></span>
+                        </li>
+                    </template>
+                </ul>
+            </div>
+            <script>
+                function genVideoSearch(url) {
+                    return {
+                        url, q: '', results: [], loading: false, done: false,
+                        async run() {
+                            if (!this.q.trim()) return;
+                            this.loading = true; this.done = false; this.results = [];
+                            try {
+                                const r = await fetch(this.url, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json',
+                                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content },
+                                    body: JSON.stringify({ q: this.q }),
+                                });
+                                const j = await r.json();
+                                this.results = j.matches || [];
+                            } catch (e) { this.results = []; }
+                            this.loading = false; this.done = true;
+                        },
+                        seek(s) { this.$refs.player.currentTime = s; this.$refs.player.play(); this.$refs.player.scrollIntoView({ behavior: 'smooth', block: 'center' }); },
+                        fmt(s) { const m = Math.floor(s / 60), sec = Math.floor(s % 60); return m + ':' + String(sec).padStart(2, '0'); },
+                    };
+                }
+            </script>
+        @endif
+
         @if($module->content)
         <div style="background:white; border-radius:12px; padding:28px; margin-bottom:20px;">
             <style>
@@ -404,6 +455,20 @@
         </div>
         @endif
 
+        {{-- Blocco B — presentazione .pptx del modulo (corsista): SOLO se pubblicata.
+             Galleria + lightbox riusano l'endpoint anteprima della pubblicata. --}}
+        @if(!$isDemo && $modulePresentation && ($modulePresentation->generation_meta['slides'] ?? 0) > 0)
+            @php $cPresUrls = array_map(fn ($i) => route('student.module.presentation.slide', [$course->slug, $module, $i]), range(1, (int) $modulePresentation->generation_meta['slides'])); @endphp
+            <div style="background:white; border-radius:12px; padding:20px; margin-bottom:20px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px;">
+                    <h3 style="font-weight:700; color:#1A1F1F; font-size:0.9rem;">📊 Presentazione del modulo</h3>
+                    <a href="{{ route('student.module.presentation.download', [$course->slug, $module]) }}"
+                       style="padding:5px 12px; background:#E8F5F5; color:#3A8C89; border-radius:6px; font-size:0.75rem; font-weight:600; text-decoration:none;">&#11015; Scarica .pptx</a>
+                </div>
+                <x-slide-lightbox :images="$cPresUrls" />
+            </div>
+        @endif
+
         @if($materials->isNotEmpty())
         <div style="background:white; border-radius:12px; padding:20px; margin-bottom:20px;">
             <h3 style="font-weight:700; color:#1A1F1F; margin-bottom:12px; font-size:0.9rem;">📎 Materiali del modulo</h3>
@@ -430,10 +495,14 @@
                         if (preg_match('/Scheda Progetto (\d+)$/u', $material->title, $matches)) {
                             $progettoNumber = $matches[1];
                         }
-                        $canvasUrl = route('student.material.canvas', $material);
+                        // Il canvas legge l'id del materiale da ?mid= per le API di
+                        // salvataggio/caricamento (/learn/canvas/{mid}/data): senza
+                        // mostra "manca mid" e disabilita l'autosalvataggio.
+                        $canvasQuery = ['mid' => $material->id];
                         if ($progettoNumber) {
-                            $canvasUrl .= "?progetto={$progettoNumber}";
+                            $canvasQuery['progetto'] = $progettoNumber;
                         }
+                        $canvasUrl = route('student.material.canvas', $material) . '?' . http_build_query($canvasQuery);
                     @endphp
                     <a href="{{ $canvasUrl }}" target="_blank"
                        style="padding:6px 14px; background:linear-gradient(135deg,#55B1AE,#3A8C89); color:white; border-radius:6px; font-size:0.8rem; font-weight:600; text-decoration:none;">

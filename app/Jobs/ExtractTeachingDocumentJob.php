@@ -3,9 +3,11 @@
 namespace App\Jobs;
 
 use App\Jobs\IngestArtifactTeacherPrivateJob;
+use App\Models\Student;
 use App\Models\TeachingArtifact;
 use App\Models\TeachingDocument;
 use App\Services\Schola\TeachingDocumentExtractor;
+use App\Support\VideoAiConsent;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -33,6 +35,14 @@ class ExtractTeachingDocumentJob implements ShouldQueue
             return; // documento eliminato nel frattempo
         }
 
+        // R5 — backstop DPA: non inviare MAI a sub-processori esterni un materiale
+        // scolastico senza consenso (anche se dispatchato direttamente). No Whisper/Vision.
+        if (VideoAiConsent::blocked(Student::find($doc->teacher_id), $doc->source_type)) {
+            $doc->update(['status' => 'failed', 'failure_reason' => 'DPA video-AI mancante: consenso ai sub-processori esterni non registrato per la scuola.']);
+
+            return;
+        }
+
         $doc->update(['status' => 'processing', 'failure_reason' => null]);
 
         try {
@@ -46,6 +56,12 @@ class ExtractTeachingDocumentJob implements ShouldQueue
             ]);
 
             $this->ensureTranscriptArtifact($doc, $result);
+
+            // Materiale già condiviso o di scuola (admin): indicizzalo anche come
+            // teacher_shared così è cercabile via Minerva dai docenti idonei.
+            if ($doc->isShared() || $doc->is_school_material) {
+                IngestMaterialSharedJob::dispatch($doc->id);
+            }
         } catch (Throwable $e) {
             Log::warning('[schola] estrazione teaching_document fallita', [
                 'document_id' => $doc->id,

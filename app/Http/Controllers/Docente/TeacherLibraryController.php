@@ -43,7 +43,15 @@ class TeacherLibraryController extends Controller
         $artifacts = $query->orderByDesc('created_at')->get();
         $subjects = Subject::orderBy('name')->get();
 
-        return view('docente.biblioteca.index', compact('artifacts', 'subjects'));
+        // Materiali grezzi visibili in Biblioteca: di scuola (admin) + condivisi con la
+        // scuola/materia. Importabili nel proprio pool (utilizzabili nelle lezioni).
+        $teacher = \App\Models\Student::find($this->teacherId());
+        $materials = \App\Models\TeachingDocument::visibleAsSharedTo($teacher)
+            ->with(['teacher:id,name', 'subject:id,name'])
+            ->orderByDesc('created_at')
+            ->get();
+
+        return view('docente.biblioteca.index', compact('artifacts', 'subjects', 'materials'));
     }
 
     public function show(TeachingArtifact $artifact)

@@ -6,6 +6,7 @@ use App\Jobs\EmbedDocumentChunksJob;
 use App\Models\Course;
 use App\Models\DocumentRag;
 use App\Models\Module;
+use App\Models\Student;
 use App\Support\PgVector;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -195,29 +196,83 @@ class RagService
         string $query,
         array $classIds,
         ?string $teacherId = null,
-        int $limit = 5
+        int $limit = 5,
+        ?string $subjectId = null,
+        bool $connect = false
     ) {
         $classIds = array_values(array_filter($classIds));
         if (empty($classIds) && $teacherId === null) {
             return collect(); // nessuno scope → nessun risultato (sicurezza)
         }
 
-        $scope = function (Builder $q) use ($classIds, $teacherId) {
-            $q->where(function ($w) use ($classIds, $teacherId) {
-                if (!empty($classIds)) {
-                    $w->orWhere(function ($c) use ($classIds) {
-                        $c->where('scope', 'class')->whereIn('school_class_id', $classIds);
-                    });
-                }
-                if ($teacherId !== null) {
-                    $w->orWhere(function ($t) use ($teacherId) {
-                        $t->where('scope', 'teacher_private')->where('teacher_id', $teacherId);
-                    });
-                }
+        $scope = function (Builder $q) use ($classIds, $teacherId, $subjectId, $connect) {
+            $q->where(function ($w) use ($classIds, $teacherId, $subjectId, $connect) {
+                $this->orClassTeacherScopes($w, $classIds, $teacherId, $subjectId, $connect);
             });
         };
 
         return $this->runRetrieval($query, $scope, $limit, $this->vectorEnabledSchola());
+    }
+
+    /**
+     * Rami di scope leggibili in ambito Schola, condivisi da searchClassScoped[Scored]:
+     *  - class: chunk delle classi passate;
+     *  - teacher_private: i chunk del docente stesso;
+     *  - teacher_shared: materiali CONDIVISI da altri docenti visibili a questo, secondo
+     *    l'ambito nel metadata (share_scope='all', oppure 'subject' con stessa materia +
+     *    stessa scuola verificate su professor_subjects).
+     */
+    private function orClassTeacherScopes(Builder $w, array $classIds, ?string $teacherId, ?string $subjectId = null, bool $connect = false): void
+    {
+        // Filtro materia (default): il chunk è della materia richiesta, oppure non
+        // classificato (fallback prudente). In modalità "connect" (collegamenti
+        // cross-materia) il filtro si disattiva → entrano tutte le materie in scope.
+        $bySubject = function ($q) use ($subjectId, $connect) {
+            if ($subjectId !== null && !$connect) {
+                $q->where(function ($s) use ($subjectId) {
+                    $s->where('subject_id', $subjectId)->orWhereNull('subject_id');
+                });
+            }
+        };
+
+        if (!empty($classIds)) {
+            $w->orWhere(function ($c) use ($classIds, $bySubject) {
+                $c->where('scope', 'class')->whereIn('school_class_id', $classIds);
+                $bySubject($c);
+            });
+        }
+
+        if ($teacherId !== null) {
+            $teacherSchoolId = Student::whereKey($teacherId)->value('school_id');
+
+            $w->orWhere(function ($t) use ($teacherId, $bySubject) {
+                $t->where('scope', 'teacher_private')->where('teacher_id', $teacherId);
+                $bySubject($t);
+            });
+
+            $w->orWhere(function ($ts) use ($teacherId, $teacherSchoolId, $bySubject) {
+                $ts->where('scope', 'teacher_shared')
+                    ->where('teacher_id', '!=', $teacherId) // i propri già in teacher_private
+                    ->where(function ($rule) use ($teacherId, $teacherSchoolId) {
+                        // Tutta la scuola (o materiale admin di scuola): stesso school_id.
+                        $rule->where(function ($all) use ($teacherSchoolId) {
+                            $all->where('metadata->share_scope', 'all')
+                                ->where('metadata->school_id', $teacherSchoolId);
+                        })
+                            ->orWhere(function ($subj) use ($teacherId) {
+                                $subj->where('metadata->share_scope', 'subject')
+                                    ->whereExists(function ($ex) use ($teacherId) {
+                                        $ex->select(DB::raw('1'))
+                                            ->from('professor_subjects as ps')
+                                            ->where('ps.teacher_id', $teacherId)
+                                            ->whereRaw("ps.subject_id::text = documents_rag.metadata->>'subject_id'")
+                                            ->whereRaw("ps.school_id::text = documents_rag.metadata->>'school_id'");
+                                    });
+                            });
+                    });
+                $bySubject($ts);
+            });
+        }
     }
 
     /**
@@ -237,25 +292,18 @@ class RagService
         ?string $teacherId = null,
         int $limit = 6,
         ?string $artifactId = null,
-        ?string $lessonId = null
+        ?string $lessonId = null,
+        ?string $subjectId = null,
+        bool $connect = false
     ): array {
         $classIds = array_values(array_filter($classIds));
         if (empty($classIds) && $teacherId === null) {
             return ['docs' => collect(), 'best_similarity' => null, 'vector' => false];
         }
 
-        $scope = function (Builder $q) use ($classIds, $teacherId, $artifactId, $lessonId) {
-            $q->where(function ($w) use ($classIds, $teacherId) {
-                if (!empty($classIds)) {
-                    $w->orWhere(function ($c) use ($classIds) {
-                        $c->where('scope', 'class')->whereIn('school_class_id', $classIds);
-                    });
-                }
-                if ($teacherId !== null) {
-                    $w->orWhere(function ($t) use ($teacherId) {
-                        $t->where('scope', 'teacher_private')->where('teacher_id', $teacherId);
-                    });
-                }
+        $scope = function (Builder $q) use ($classIds, $teacherId, $artifactId, $lessonId, $subjectId, $connect) {
+            $q->where(function ($w) use ($classIds, $teacherId, $subjectId, $connect) {
+                $this->orClassTeacherScopes($w, $classIds, $teacherId, $subjectId, $connect);
             });
             if ($artifactId !== null) {
                 $q->where('metadata->artifact_id', $artifactId);

@@ -11,6 +11,7 @@ use App\Models\QuizAttempt;
 use App\Models\Student;
 use App\Models\StudentModuleProgress;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class CourseController extends Controller
 {
@@ -215,13 +216,101 @@ class CourseController extends Controller
                 ->exists();
         }
 
+        // Blocco B — presentazione .pptx del modulo visibile al corsista: SOLO la
+        // versione PUBBLICATA (le bozze dell'admin restano nascoste).
+        $modulePresentation = $module->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->first();
+
+        // V4 — video pubblicato, SOLO se legato alla presentazione pubblicata corrente.
+        $moduleVideo = $modulePresentation
+            ? $module->videos()->where('presentation_id', $modulePresentation->id)
+                ->where('status', 'ready')->whereNotNull('published_at')->latest('published_at')->first()
+            : null;
+
         return view('student.course.module', compact(
             'course', 'module', 'materials', 'quiz', 'finalQuiz',
             'certificationPassed', 'progress', 'prevModule', 'nextModule',
             'canvases', 'isDemo', 'note', 'studentNotes',
             'instructorManualSections', 'instructorNotes', 'teaching',
-            'moduleConceptMap', 'moduleConceptMapForked', 'hasModuleDocument'
+            'moduleConceptMap', 'moduleConceptMapForked', 'hasModuleDocument',
+            'modulePresentation', 'moduleVideo'
         ));
+    }
+
+    /**
+     * V4 — stream del video pubblicato del modulo (player HTML5, Range/seek). Stesso
+     * gate del modulo (checkAccess). Solo il video legato alla presentazione pubblicata corrente.
+     */
+    public function moduleVideoStream(Course $course, Module $module)
+    {
+        $this->checkAccess($course);
+        abort_unless($module->course_id === $course->id, 404);
+
+        $presId = $module->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->value('id');
+        abort_unless($presId, 404);
+
+        $video = $module->videos()->where('presentation_id', $presId)
+            ->where('status', 'ready')->whereNotNull('published_at')->latest('published_at')->first();
+        abort_unless($video && $video->file_path && Storage::disk('local')->exists($video->file_path), 404);
+
+        return response()->file(Storage::disk('local')->path($video->file_path), ['Content-Type' => 'video/mp4']);
+    }
+
+    /** R4 — ricerca PER-VIDEO nel video pubblicato del modulo (corsista). Stesso gate. */
+    public function moduleVideoSearch(Course $course, Module $module, Request $request, \App\Services\Schola\VideoSearchService $search)
+    {
+        $this->checkAccess($course);
+        abort_unless($module->course_id === $course->id, 404);
+        $q = trim($request->input('q', ''));
+        abort_if($q === '', 422, 'Inserisci una ricerca.');
+
+        $presId = $module->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->value('id');
+        $video = $presId ? $module->videos()->where('presentation_id', $presId)
+            ->where('status', 'ready')->whereNotNull('published_at')->latest('published_at')->first() : null;
+        abort_unless($video && $video->video_ai_id, 404);
+
+        return response()->json(['matches' => $search->perVideo($video->video_ai_id, $q)]);
+    }
+
+    /**
+     * Blocco B — download della presentazione PUBBLICATA del modulo (corsista).
+     * Gate: stesso checkAccess del modulo. File da storage PRIVATO, mai URL diretto.
+     */
+    public function presentationDownload(Course $course, Module $module)
+    {
+        $this->checkAccess($course);
+        abort_unless($module->course_id === $course->id, 404);
+
+        $presentation = $module->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->first();
+        abort_unless($presentation && $presentation->file_path
+            && Storage::disk('local')->exists($presentation->file_path), 404);
+
+        $filename = $presentation->generation_meta['filename'] ?? (\Illuminate\Support\Str::slug($module->title) . '.pptx');
+
+        return response()->download(Storage::disk('local')->path($presentation->file_path), $filename);
+    }
+
+    /** Blocco B — anteprima PNG (slide n) della presentazione PUBBLICATA del modulo. */
+    public function presentationImage(Course $course, Module $module, int $n, \App\Services\Schola\SlidePreviewService $preview)
+    {
+        $this->checkAccess($course);
+        abort_unless($module->course_id === $course->id, 404);
+
+        $presentation = $module->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->first();
+        abort_unless($presentation && $presentation->file_path
+            && Storage::disk('local')->exists($presentation->file_path), 404);
+
+        $images = $preview->imagesFor($presentation->file_path);
+        $relPath = $images[$n - 1] ?? abort(404);
+
+        return response()->file(Storage::disk('local')->path($relPath), [
+            'Content-Type' => 'image/png',
+            'Cache-Control' => 'private, max-age=300',
+        ]);
     }
 
     public function completeModule(Course $course, Module $module)

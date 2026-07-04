@@ -82,13 +82,16 @@ class ModulePresentationTest extends TestCase
         ]);
     }
 
-    public function test_una_sola_presentazione_per_modulo(): void
+    public function test_bi_versione_due_presentazioni_per_modulo(): void
     {
+        // Blocco B: rimosso UNIQUE(module_id) → un modulo può avere bozza + pubblicata.
         $module = $this->makeModule();
-        ModulePresentation::create(['module_id' => $module->id]);
+        ModulePresentation::create(['module_id' => $module->id, 'status' => 'ready', 'published_at' => now()]);
+        ModulePresentation::create(['module_id' => $module->id, 'status' => 'ready', 'published_at' => null]);
 
-        $this->expectException(QueryException::class);
-        ModulePresentation::create(['module_id' => $module->id]);
+        $this->assertSame(2, $module->presentations()->count());
+        $this->assertSame(1, $module->presentations()->whereNotNull('published_at')->count());
+        $this->assertSame(1, $module->presentations()->whereNull('published_at')->count());
     }
 
     // ============================================================
@@ -109,6 +112,12 @@ class ModulePresentationTest extends TestCase
         $this->assertSame("module-presentations/{$module->id}/{$mp->id}.pptx", $result['file_path']);
         Storage::disk('local')->assertExists($result['file_path']);
         $this->assertSame(3, $result['meta']['slides']); // cover + 2
+
+        // S0: buildFrom restituisce la spec COMPLETA (cover + slides + theme) per la persistenza.
+        $this->assertArrayHasKey('spec', $result);
+        $this->assertSame('cover', $result['spec']['slides'][0]['layout']);
+        $this->assertCount(3, $result['spec']['slides']);
+        $this->assertArrayHasKey('theme', $result['spec']);
 
         // tema GLITCH applicato (forPlatform: nessun brand_profile → default GLITCH)
         $zip = new ZipArchive();

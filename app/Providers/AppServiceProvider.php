@@ -28,7 +28,16 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        // V3 — TTS parametrico: il provider concreto è scelto da config (TTS_PROVIDER).
+        $this->app->bind(\App\Services\Tts\TtsProvider::class, function ($app) {
+            $provider = config('services.tts.provider', 'elevenlabs');
+            $class = config("services.tts.providers.{$provider}");
+            if (!$class || !class_exists($class)) {
+                throw new \RuntimeException("Provider TTS sconosciuto: {$provider}");
+            }
+
+            return $app->make($class);
+        });
     }
 
     public function boot(): void

@@ -450,6 +450,8 @@ TXT;
             'school_class_id' => 'required|uuid',
             'artifact_id' => 'nullable|uuid',
             'lesson_id' => 'nullable|uuid',
+            'subject_id' => 'nullable|uuid',   // materia corrente (di norma dal contesto)
+            'connect' => 'nullable|boolean',   // "Cerca collegamenti con altre materie"
             'history' => 'nullable|array',
             'history.*.role' => 'required_with:history|in:user,assistant',
             'history.*.content' => 'required_with:history|string',
@@ -488,13 +490,37 @@ TXT;
         $teacherId = $asDocente ? $student->id : null;
         $classIds = [$class->id];
         $artifactId = $data['artifact_id'] ?? null;
+        $connect = (bool) ($data['connect'] ?? false);
+
+        // Materia corrente: dal parametro, o derivata dal contesto/classificazione
+        // (lezione→argomento, artefatto, o materia diretta della classe libera).
+        $subjectId = $data['subject_id'] ?? null;
+        if ($subjectId === null && $lessonId !== null) {
+            $subjectId = optional(\App\Models\Lesson::with('topic')->find($lessonId))->topic?->subject_id;
+        }
+        if ($subjectId === null && $artifactId !== null) {
+            $subjectId = \App\Models\TeachingArtifact::whereKey($artifactId)->value('subject_id');
+        }
+        if ($subjectId === null) {
+            $subjectId = $class->subject_id; // regime libero: la classe HA una materia
+        }
+
+        // "Cerca collegamenti": nel regime libero (1 classe = 1 materia) le altre materie
+        // sono le ALTRE classi (studente: sue iscrizioni attive; docente: sue cattedre).
+        // Nel regime scuola bastano gli stessi chunk di classe senza filtro materia.
+        if ($connect) {
+            $others = $asDocente
+                ? \App\Models\TeachingAssignment::where('teacher_id', $student->id)->pluck('school_class_id')->all()
+                : \App\Models\ClassStudent::where('student_id', $student->id)->where('status', 'active')->pluck('school_class_id')->all();
+            $classIds = array_values(array_unique(array_merge($classIds, array_filter($others))));
+        }
 
         // Retrieval di classe (gate §5). Pre-filtro sull'artefatto o sulla LEZIONE
         // se richiesto: si interroga "prima di tutto" quel contesto, poi — se vuoto —
         // si allarga ai materiali della classe (resta dentro lo scope §5).
-        $result = $this->rag->searchClassScopedScored($data['question'], $classIds, $teacherId, 6, $artifactId, $lessonId);
+        $result = $this->rag->searchClassScopedScored($data['question'], $classIds, $teacherId, 6, $artifactId, $lessonId, $subjectId, $connect);
         if (($artifactId || $lessonId) && $result['docs']->isEmpty()) {
-            $result = $this->rag->searchClassScopedScored($data['question'], $classIds, $teacherId, 6, null, null);
+            $result = $this->rag->searchClassScopedScored($data['question'], $classIds, $teacherId, 6, null, null, $subjectId, $connect);
         }
 
         $conversation = $this->classConversation($student, $class);
@@ -539,7 +565,8 @@ TXT;
             $data['question'],
             $data['history'] ?? [],
             $context,
-            $asDocente
+            $asDocente,
+            $connect
         );
 
         ChatMessage::create([
@@ -617,9 +644,17 @@ CONTESTO (materiali della classe):
 TXT;
     }
 
-    private function callClaudeForClass(string $question, array $history, string $context, bool $asDocente): array
+    private function callClaudeForClass(string $question, array $history, string $context, bool $asDocente, bool $connect = false): array
     {
         $systemPrompt = $this->buildScholaSystemPrompt($asDocente, $context);
+
+        // Modalità "Cerca collegamenti": il contesto contiene materiali di più materie.
+        if ($connect) {
+            $systemPrompt .= "\n\nL'utente ha chiesto di CERCARE COLLEGAMENTI con altre materie: "
+                . "metti in evidenza i collegamenti interdisciplinari tra i materiali forniti, "
+                . "indicando per ogni collegamento la MATERIA di provenienza. Resta comunque "
+                . "ancorato ai materiali del contesto (non inventare collegamenti non supportati).";
+        }
 
         $messages = array_values($history);
         $messages[] = ['role' => 'user', 'content' => $question];

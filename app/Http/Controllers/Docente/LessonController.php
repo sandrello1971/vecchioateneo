@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Docente;
 
 use App\Http\Controllers\Controller;
 use App\Models\Lesson;
+use App\Models\Student;
 use App\Models\TeachingDocument;
 use App\Models\Topic;
+use App\Support\VideoAiConsent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -51,12 +53,19 @@ class LessonController extends Controller
             ->get();
         $publishedClassIds = $lesson->publications->pluck('school_class_id')->all();
 
-        // Presentazione .pptx (P21): singola, riusata su rigenerazione.
-        $presentation = $lesson->presentations()->latest()->first();
+        // Presentazione .pptx (P21) — bi-versione: la BOZZA in lavorazione e la
+        // versione PUBBLICATA (ciò che vedono gli studenti) sono record distinti.
+        $draft = $lesson->presentations()->whereNull('published_at')->latest()->first();
+        $published = $lesson->presentations()->whereNotNull('published_at')->latest('published_at')->first();
+
+        // Upload materiale direttamente dalla lezione (gate DPA come nella sezione Materiali).
+        $videoAiDpaMissing = VideoAiConsent::dpaMissing(Student::find($this->teacherId()));
+        $externalTypes = VideoAiConsent::externalSourceTypes();
 
         return view('docente.lezioni.show', compact(
             'lesson', 'materials', 'artifacts', 'teacherClasses', 'publishedClassIds',
-            'bodyHtml', 'teacherNotes', 'presentation'
+            'bodyHtml', 'teacherNotes', 'draft', 'published',
+            'videoAiDpaMissing', 'externalTypes'
         ));
     }
 

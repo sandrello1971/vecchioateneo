@@ -7,6 +7,7 @@ use App\Models\Student;
 use App\Models\Subject;
 use App\Models\TeachingDocument;
 use App\Models\Topic;
+use App\Support\VideoAiConsent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -111,7 +112,11 @@ class TopicController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
-        return view('docente.argomenti.show', compact('topic', 'classified', 'pool'));
+        // Upload materiale nel pool direttamente da qui (gate DPA come nella sezione Materiali).
+        $videoAiDpaMissing = VideoAiConsent::dpaMissing($teacher);
+        $externalTypes = VideoAiConsent::externalSourceTypes();
+
+        return view('docente.argomenti.show', compact('topic', 'classified', 'pool', 'videoAiDpaMissing', 'externalTypes'));
     }
 
     public function update(Request $request, Topic $topic)

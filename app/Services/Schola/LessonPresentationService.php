@@ -31,6 +31,7 @@ class LessonPresentationService
     private const MAX_TOKENS = 4000;
     private const MAX_CONTENT_CHARS = 30000;
     private const PROMPT_VERSION = 'pptx-p27-2026-06';
+    private const EDIT_PROMPT_VERSION = 'pptx-edit-v1';
 
     /** Layout di CONTENUTO che l'LLM può scegliere (la cover è generata da noi). */
     private const CONTENT_LAYOUTS = ['process_cards', 'columns', 'stat', 'bullets_clean'];
@@ -38,7 +39,7 @@ class LessonPresentationService
     /**
      * Costruisce il .pptx per una presentazione di lezione.
      *
-     * @return array{file_path: string, meta: array}
+     * @return array{file_path: string, meta: array, spec: array}
      */
     public function build(LessonPresentation $presentation): array
     {
@@ -79,7 +80,7 @@ class LessonPresentationService
      * Costruisce il .pptx per un MODULO di corso Officina (P28).
      * Sorgente = module.content; brand = piattaforma (GLITCH), i corsi non hanno scuola.
      *
-     * @return array{file_path: string, meta: array}
+     * @return array{file_path: string, meta: array, spec: array}
      */
     public function buildForModule(ModulePresentation $presentation): array
     {
@@ -117,7 +118,7 @@ class LessonPresentationService
      * Il cuore (generateSpec/buildSpec/normalizeSlides/renderPptx) non cambia.
      *
      * @param array<string, mixed> $specOptions opzioni per generateSpec (subject, log_context)
-     * @return array{file_path: string, meta: array}
+     * @return array{file_path: string, meta: array, spec: array}
      */
     public function buildFrom(string $content, string $title, ?string $subtitle, string $schoolName, ResolvedTheme $theme, string $storagePath, array $specOptions = []): array
     {
@@ -142,7 +143,138 @@ class LessonPresentationService
                 'prompt_version' => self::PROMPT_VERSION,
                 'filename' => Str::slug($title) . '.pptx',
             ]),
+            // S0: la spec COMPLETA usata per il render (cover + slides + theme),
+            // persistita dal chiamante per abilitare la correzione via prompt (S2).
+            'spec' => $spec,
         ];
+    }
+
+    /**
+     * S2 — correzione mirata via prompt. Richiede la spec persistita (S0).
+     * Claude riceve la spec corrente + l'istruzione e restituisce SOLO le slide
+     * da sostituire (per numero); il merge avviene in PHP, così copertina, tema,
+     * ordine e count restano invariati per costruzione e cambiano solo le slide
+     * indicate. Sorgente-agnostico: lavora sulla spec, non sul contenuto → uguale
+     * per lezioni e moduli.
+     *
+     * @return array{file_path: string, meta: array, spec: array}
+     */
+    public function editSpec(LessonPresentation|ModulePresentation $presentation, string $instruction): array
+    {
+        $spec = $presentation->spec;
+        if (!is_array($spec) || empty($spec['slides']) || !is_array($spec['slides'])) {
+            throw new RuntimeException('Presentazione non correggibile: rigenerala dal sistema per abilitare la correzione.');
+        }
+        $storagePath = (string) $presentation->file_path;
+        if ($storagePath === '') {
+            throw new RuntimeException('File della presentazione assente: rigenerala dal sistema.');
+        }
+
+        $apiKey = config('services.anthropic.key') ?? env('ANTHROPIC_API_KEY');
+        if (empty($apiKey)) {
+            throw new RuntimeException('Anthropic API key non configurata.');
+        }
+
+        $current = json_encode(['slides' => $spec['slides']], JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        $userMessage = "SPEC corrente (slide numerate da 1; la slide 1 è la copertina):\n```json\n{$current}\n```\n\nIstruzione dell'utente:\n{$instruction}";
+
+        Log::info('Lesson pptx edit request', ['presentation_id' => $presentation->id]);
+
+        $response = Http::withHeaders([
+            'x-api-key' => $apiKey,
+            'anthropic-version' => '2023-06-01',
+            'content-type' => 'application/json',
+        ])->timeout(120)->post(self::CLAUDE_API_URL, [
+            'model' => config('services.pptx.model', 'claude-sonnet-4-6'),
+            'max_tokens' => self::MAX_TOKENS,
+            'temperature' => self::TEMPERATURE,
+            'system' => $this->buildEditSystemPrompt(),
+            'messages' => [['role' => 'user', 'content' => $userMessage]],
+        ]);
+
+        if (!$response->successful()) {
+            Log::error('Lesson pptx edit Claude API failed', ['status' => $response->status()]);
+            throw new RuntimeException('Errore Claude API: ' . $response->status());
+        }
+
+        $text = (string) ($response->json('content.0.text') ?? '');
+        $text = preg_replace('/^```(?:json)?\s*/i', '', trim($text));
+        $text = preg_replace('/```\s*$/', '', $text);
+        $data = json_decode(trim($text), true);
+
+        if (!is_array($data) || !isset($data['edits']) || !is_array($data['edits']) || $data['edits'] === []) {
+            throw new RuntimeException('Risposta di correzione non valida (edits mancanti).');
+        }
+
+        // Merge MIRATO: sostituisce solo le slide indicate. Indice 0 (copertina)
+        // e theme intoccabili per costruzione → garanzia di non-modifica collaterale.
+        $newSlides = $spec['slides'];
+        $changed = [];
+        foreach ($data['edits'] as $edit) {
+            if (!is_array($edit) || !isset($edit['slide']) || !is_array($edit['slide'])) {
+                continue;
+            }
+            $i = (int) ($edit['slide_number'] ?? 0) - 1;
+            if ($i < 1 || $i >= count($newSlides)) {
+                continue; // mai la copertina (0), mai fuori range
+            }
+            $newSlides[$i] = $this->normalizeSlide($edit['slide']);
+            $changed[] = $i + 1;
+        }
+        if ($changed === []) {
+            throw new RuntimeException('Nessuna modifica valida applicabile (verifica il numero di slide).');
+        }
+
+        $newSpec = $spec;
+        $newSpec['slides'] = $newSlides;
+
+        $absPath = Storage::disk('local')->path($storagePath);
+        Storage::disk('local')->makeDirectory(dirname($storagePath));
+        $this->renderPptx($newSpec, $absPath);
+
+        // Invalidazione anteprima (S1): i PNG si rigenerano al prossimo accesso.
+        app(SlidePreviewService::class)->forget($storagePath);
+        // GANCIO feature video (non ancora esistente): qui andranno marcati "stale"
+        // gli eventuali derivati video/audio di questa presentazione.
+
+        $coverTitle = trim((string) ($newSpec['slides'][0]['title'] ?? ''));
+
+        return [
+            'file_path' => $storagePath,
+            'meta' => array_merge($spec['meta'] ?? [], [
+                'slides' => count($newSpec['slides']),
+                'prompt_version' => self::EDIT_PROMPT_VERSION,
+                'model' => config('services.pptx.model', 'claude-sonnet-4-6'),
+                'tokens_in' => (int) ($response->json('usage.input_tokens') ?? 0),
+                'tokens_out' => (int) ($response->json('usage.output_tokens') ?? 0),
+                'edited_slides' => $changed,
+                'last_edit' => mb_substr($instruction, 0, 500),
+                'filename' => Str::slug($coverTitle !== '' ? $coverTitle : 'presentazione') . '.pptx',
+            ]),
+            'spec' => $newSpec,
+        ];
+    }
+
+    /** System prompt della correzione mirata: cambia solo ciò che l'istruzione chiede. */
+    private function buildEditSystemPrompt(): string
+    {
+        $layouts = implode(', ', self::CONTENT_LAYOUTS);
+
+        return <<<PROMPT
+        Sei un editor di presentazioni didattiche. Ricevi (a) la SPEC JSON corrente delle slide e (b) un'istruzione in italiano.
+        Applica ESCLUSIVAMENTE la modifica richiesta dall'istruzione: tutte le altre slide devono restare identiche.
+
+        Le slide sono numerate a partire da 1. La slide 1 è la COPERTINA, generata dal sistema: NON modificarla. Non toccare il tema né l'ordine.
+
+        Restituisci SOLO le slide che cambiano, in JSON valido e nient'altro, in questa forma esatta:
+        {"edits":[{"slide_number": <numero 1-based della slide da modificare>, "slide": <oggetto slide completo aggiornato>}]}
+
+        Regole:
+        - Includi in "edits" SOLO le slide effettivamente modificate dall'istruzione; ometti tutte le altre.
+        - Ogni "slide" deve usare uno dei layout consentiti ({$layouts}) con la stessa struttura della spec corrente.
+        - Non aggiungere né rimuovere slide: modifica il contenuto di quelle esistenti.
+        - Nessun testo, commento o markdown fuori dal JSON.
+        PROMPT;
     }
 
     /**

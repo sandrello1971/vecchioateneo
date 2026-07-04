@@ -277,10 +277,15 @@
 @endpush
 
 {{-- ==================== PRESENTAZIONE .pptx (P28) — generatore condiviso, pattern async ==================== --}}
-@php $modPres = $module->presentation; @endphp
+@php
+    // Blocco B — bi-versione: l'admin lavora sulla BOZZA; i corsisti vedono la PUBBLICATA.
+    $modDraft = $module->presentations()->whereNull('published_at')->latest()->first();
+    $modPublished = $module->presentations()->whereNotNull('published_at')->latest('published_at')->first();
+    $modPres = $modDraft; // le azioni sotto (genera/rigenera/carica/correggi/elimina) operano sulla bozza
+@endphp
 <div style="max-width:900px; margin:20px auto 0;">
     <div style="background:white; border-radius:12px; padding:24px;"
-         x-data="modPresentationStatus('{{ $modPres?->status ?? 'none' }}')">
+         x-data="modPresentationStatus('{{ $modDraft?->status ?? 'none' }}')">
         <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
             <h3 style="font-size:1rem; font-weight:700; color:#1A1F1F; flex:1;">📊 Presentazione (.pptx)</h3>
             <template x-if="status==='generating'">
@@ -292,13 +297,41 @@
             <template x-if="status==='ready'"><span style="color:#3A8C89; font-weight:700; font-size:0.85rem;">&#10003; Pronta</span></template>
             <template x-if="status==='failed'"><span style="color:#A8521F; font-weight:700; font-size:0.85rem;">&#10007; Generazione fallita</span></template>
         </div>
-        <p style="font-size:0.78rem; color:#8A9696; margin-bottom:12px;">Slide 16:9 brandizzate (tema Noscite di piattaforma) generate dal contenuto del modulo.</p>
+        <p style="font-size:0.78rem; color:#8A9696; margin-bottom:12px;">Slide 16:9 brandizzate (tema Noscite di piattaforma) generate dal contenuto del modulo. I corsisti vedono solo la versione pubblicata.</p>
+
+        {{-- ===== VERSIONE ONLINE (pubblicata) — ciò che vedono i corsisti ===== --}}
+        @if($modPublished)
+            @php $modPubUrls = array_map(fn ($i) => route('admin.courses.modules.presentation.preview', [$course, $module, $i]) . '?version=published', range(1, (int) ($modPublished->generation_meta['slides'] ?? 0))); @endphp
+            <div style="border:1px solid #BFE3D9; background:#F2FAF7; border-radius:8px; padding:12px 14px; margin-bottom:14px;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span style="display:inline-block; padding:2px 9px; background:#3A8C89; color:white; border-radius:6px; font-size:0.72rem; font-weight:700;">● PUBBLICATA</span>
+                    <span style="font-size:0.75rem; color:#3A8C89;">Visibile ai corsisti · pubblicata il {{ $modPublished->published_at->format('d/m/Y · H:i') }}</span>
+                    @if(($modPublished->generation_meta['slides'] ?? null))<span style="font-size:0.75rem; color:#8A9696;">· {{ $modPublished->generation_meta['slides'] }} slide</span>@endif
+                    <span style="flex:1;"></span>
+                    <form method="POST" action="{{ route('admin.courses.modules.presentation.unpublish', [$course, $module]) }}"
+                          onsubmit="return confirm('Ritirare la presentazione? I corsisti non la vedranno più.') && (this.querySelector('button').disabled=true || true);">
+                        @csrf
+                        <button type="submit" style="padding:7px 13px; background:white; color:#A8521F; border:1px solid #A8521F; border-radius:8px; font-size:0.8rem; font-weight:600; cursor:pointer;">Ritira</button>
+                    </form>
+                </div>
+                @if(($modPublished->generation_meta['slides'] ?? 0) > 0)
+                    <div style="margin-top:10px;"><x-slide-lightbox :images="$modPubUrls" /></div>
+                @endif
+            </div>
+        @endif
+
+        @if($modDraft)
+            <div style="margin-bottom:8px;"><span style="display:inline-block; padding:2px 9px; background:#F5E6B8; color:#7A5C00; border-radius:6px; font-size:0.72rem; font-weight:700;">BOZZA in lavorazione</span></div>
+        @endif
 
         @if(($modPres?->status ?? null) === 'failed' && ($modPres->generation_meta['failure_reason'] ?? null))
             <p style="margin-bottom:10px; font-size:0.82rem; color:#A8521F;">{{ $modPres->generation_meta['failure_reason'] }}</p>
         @endif
         @if(($modPres?->status ?? null) === 'ready' && ($modPres->generation_meta['slides'] ?? null))
             <div style="margin-bottom:10px; font-size:0.75rem; color:#8A9696;">{{ $modPres->generation_meta['slides'] }} slide @isset($modPres->generation_meta['model']) · {{ $modPres->generation_meta['model'] }} @endisset</div>
+        @endif
+        @if(($modPres->source ?? 'generated') === 'uploaded')
+            <div style="margin-bottom:10px;"><span style="display:inline-block; padding:2px 8px; background:#EEF3F3; color:#3A8C89; border-radius:6px; font-size:0.72rem; font-weight:700;">Versione caricata</span></div>
         @endif
 
         @if(empty($module->content))
@@ -316,18 +349,193 @@
                         <button type="submit" style="padding:9px 16px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">{{ ($modPres?->status ?? null) === 'failed' ? '↻ Riprova' : '✨ Genera presentazione' }}</button>
                     </form>
                 @elseif($modPres->status === 'ready')
-                    <a href="{{ route('admin.courses.modules.presentation.download', [$course, $module]) }}" style="display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:#3A8C89; color:white; border-radius:8px; font-size:0.85rem; font-weight:600; text-decoration:none;">&#11015; Scarica .pptx</a>
+                    <form method="POST" action="{{ route('admin.courses.modules.presentation.publish', [$course, $module]) }}"
+                          onsubmit="return confirm('Pubblicare questa bozza? Sostituirà la versione online attuale e sarà visibile ai corsisti.') && (this.querySelector('button').disabled=true || true);">
+                        @csrf
+                        <button type="submit" style="padding:9px 16px; background:#3A8C89; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:700; cursor:pointer;">&#10003; Pubblica</button>
+                    </form>
+                    <a href="{{ route('admin.courses.modules.presentation.download', [$course, $module]) }}" style="display:inline-flex; align-items:center; gap:6px; padding:9px 16px; background:white; color:#3A8C89; border:1px solid #3A8C89; border-radius:8px; font-size:0.85rem; font-weight:600; text-decoration:none;">&#11015; Scarica</a>
                     <form method="POST" action="{{ route('admin.courses.modules.presentation.regenerate', [$course, $module]) }}"
                           onsubmit="return confirm('Rigenerare la presentazione? Il file attuale verrà sovrascritto.') && (this.querySelector('button').disabled=true || true);">
                         @csrf
                         <button type="submit" style="padding:9px 16px; background:white; color:#E28A53; border:1px solid #E28A53; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">Rigenera</button>
                     </form>
                 @endif
+
+                {{-- S3 — carica una propria versione .pptx (sostituisce l'unico record del modulo) --}}
+                <form method="POST" action="{{ route('admin.courses.modules.presentation.upload', [$course, $module]) }}" enctype="multipart/form-data"
+                      style="display:inline-flex; align-items:center; gap:6px;"
+                      onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Caricamento…';">
+                    @csrf
+                    <input type="file" name="presentation" accept=".pptx" required style="font-size:0.78rem; max-width:190px;">
+                    <button type="submit" style="padding:9px 14px; background:white; color:#3A8C89; border:1px solid #3A8C89; border-radius:8px; font-size:0.82rem; font-weight:600; cursor:pointer;">Carica .pptx</button>
+                </form>
+
+                {{-- S3 — elimina la presentazione (azione distruttiva, conferma esplicita) --}}
+                @if($modPres && $modPres->status !== 'pending')
+                    <form method="POST" action="{{ route('admin.courses.modules.presentation.destroy', [$course, $module]) }}"
+                          onsubmit="return confirm('Eliminare la presentazione? Operazione non reversibile.') && (this.querySelector('button').disabled=true || true);">
+                        @csrf @method('DELETE')
+                        <button type="submit" style="padding:9px 14px; background:white; color:#A8521F; border:1px solid #A8521F; border-radius:8px; font-size:0.82rem; font-weight:600; cursor:pointer;">Elimina</button>
+                    </form>
+                @endif
             </div>
+            </div>
+        @endif
+
+        {{-- S1 — anteprima slide (galleria + lightbox). Gemella della galleria docente:
+             stesso componente, stesso endpoint preview (storage privato). --}}
+        @if(($modPres?->status ?? null) === 'ready' && ($modPres->generation_meta['slides'] ?? 0) > 0)
+            @php $slideUrls = array_map(fn ($i) => route('admin.courses.modules.presentation.preview', [$course, $module, $i]), range(1, (int) $modPres->generation_meta['slides'])); @endphp
+            <div style="margin-top:16px; border-top:1px solid #F0F2F2; padding-top:14px;">
+                <div style="font-size:0.72rem; font-weight:700; color:#8A9696; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">Anteprima slide</div>
+                <x-slide-lightbox :images="$slideUrls" />
+            </div>
+        @endif
+
+        {{-- S2 — correzione via prompt: SOLO se la presentazione ha spec persistita
+             (generata dal sistema). Gemella del box docente. --}}
+        @if(($modPres?->status ?? null) === 'ready' && !empty($modPres->spec))
+            <div style="margin-top:16px; border-top:1px solid #F0F2F2; padding-top:14px;" x-show="status!=='generating'">
+                <div style="font-size:0.72rem; font-weight:700; color:#8A9696; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Correggi le slide</div>
+                <form method="POST" action="{{ route('admin.courses.modules.presentation.edit', [$course, $module]) }}"
+                      onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').innerHTML='⏳ Correzione…';">
+                    @csrf
+                    <textarea name="instruction" rows="2" maxlength="2000" required
+                              placeholder="Descrivi la modifica (es. «Nella slide 3 aggiungi un esempio pratico»)"
+                              style="width:100%; box-sizing:border-box; padding:8px 10px; border:1px solid #C8D0D0; border-radius:8px; font-size:0.85rem; resize:vertical;"></textarea>
+                    <button type="submit" style="margin-top:8px; padding:9px 16px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">Applica correzione</button>
+                </form>
             </div>
         @endif
     </div>
 </div>
+
+{{-- ==================== VIDEO NARRATO (V1) — copione bozza dalla presentazione pubblicata ==================== --}}
+@if($modPublished)
+    @php $modVideo = $module->videos()->where('presentation_id', $modPublished->id)->latest()->first(); @endphp
+    <div style="max-width:900px; margin:20px auto 0;">
+        <div style="background:white; border-radius:12px; padding:24px;"
+             x-data="{ s: '{{ $modVideo?->status ?? 'none' }}' }"
+             x-init="if (s === 'generating') { const t = setInterval(async () => { const r = await fetch('{{ route('admin.courses.modules.video.status', [$course, $module]) }}'); const j = await r.json(); if (j.status !== 'generating') { clearInterval(t); location.reload(); } }, 4000); }">
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
+                <h3 style="font-size:1rem; font-weight:700; color:#1A1F1F; flex:1;">🎬 Video narrato</h3>
+                @if(($modVideo?->script_status ?? 'none') === 'draft')
+                    <span style="display:inline-block; padding:2px 9px; background:#F5E6B8; color:#7A5C00; border-radius:6px; font-size:0.72rem; font-weight:700;">Copione: bozza</span>
+                @endif
+            </div>
+            <p style="font-size:0.78rem; color:#8A9696; margin-bottom:12px;">Copione narrato per slide (Claude). Resta in bozza: nessun costo voce finché non lo confermi.</p>
+
+            <template x-if="s === 'generating'">
+                <p style="font-size:0.82rem; color:#E28A53;">Generazione del copione in corso… la pagina si aggiorna da sola.</p>
+            </template>
+
+            @if(($modVideo?->status ?? null) === 'failed' && ($modVideo->generation_meta['failure_reason'] ?? null))
+                <p style="font-size:0.82rem; color:#A8521F;">{{ $modVideo->generation_meta['failure_reason'] }}</p>
+            @endif
+
+            <div x-show="s !== 'generating'">
+                <form method="POST" action="{{ route('admin.courses.modules.video.script', [$course, $module]) }}"
+                      onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').innerHTML='⏳ Preparazione…';">
+                    @csrf
+                    <button type="submit" style="padding:9px 16px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">{{ ($modVideo?->script_status ?? 'none') === 'draft' ? 'Rigenera copione' : 'Prepara copione video' }}</button>
+                </form>
+            </div>
+
+            {{-- V2 — revisione copione: anteprima slide + testo affiancati, a mano e via prompt --}}
+            @if(in_array($modVideo?->script_status ?? 'none', ['draft', 'confirmed'], true) && !empty($modVideo->script))
+                <div style="margin-top:14px; border-top:1px solid #F0F2F2; padding-top:12px;" x-data="{ zoom: null }">
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                        <div style="font-size:0.72rem; font-weight:700; color:#8A9696; text-transform:uppercase; letter-spacing:0.05em;">Copione per slide</div>
+                        <span style="flex:1;"></span>
+                        @if($modVideo->script_status === 'confirmed')
+                            <span style="display:inline-block; padding:2px 9px; background:#3A8C89; color:white; border-radius:6px; font-size:0.72rem; font-weight:700;">Copione confermato</span>
+                        @else
+                            <form method="POST" action="{{ route('admin.courses.modules.video.confirm', [$course, $module]) }}"
+                                  onsubmit="return confirm('Confermare il copione? Potrai sempre rimodificarlo (tornerà in bozza).') && (this.querySelector('button').disabled=true || true);">
+                                @csrf
+                                <button style="padding:7px 13px; background:#3A8C89; color:white; border:none; border-radius:8px; font-size:0.8rem; font-weight:700; cursor:pointer;">&#10003; Conferma copione</button>
+                            </form>
+                        @endif
+                    </div>
+
+                    @foreach($modVideo->script as $line)
+                        @php $sn = (int) ($line['slide_number'] ?? 0); $pv = route('admin.courses.modules.presentation.preview', [$course, $module, $sn]) . '?version=published'; @endphp
+                        <div style="display:flex; gap:12px; padding:12px 0; border-top:1px solid #F4F6F6;">
+                            <img src="{{ $pv }}" alt="Slide {{ $sn }}" loading="lazy" @click="zoom = '{{ $pv }}'"
+                                 style="width:200px; aspect-ratio:16/9; object-fit:contain; background:#0A0A0A; border:1px solid #C8D0D0; border-radius:6px; cursor:zoom-in; flex-shrink:0;">
+                            <div style="flex:1; min-width:0;">
+                                <div style="font-size:0.72rem; font-weight:700; color:#8A9696; margin-bottom:4px;">Slide {{ $sn }}</div>
+                                <form method="POST" action="{{ route('admin.courses.modules.video.line', [$course, $module]) }}"
+                                      onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Salvataggio…';">
+                                    @csrf
+                                    <input type="hidden" name="slide_number" value="{{ $sn }}">
+                                    <textarea name="text" rows="3" maxlength="3000" style="width:100%; box-sizing:border-box; padding:7px 9px; border:1px solid #C8D0D0; border-radius:6px; font-size:0.82rem; resize:vertical;">{{ $line['text'] ?? '' }}</textarea>
+                                    <button style="margin-top:5px; padding:6px 12px; background:white; color:#3A8C89; border:1px solid #3A8C89; border-radius:7px; font-size:0.78rem; font-weight:600; cursor:pointer;">Salva</button>
+                                </form>
+                                <form method="POST" action="{{ route('admin.courses.modules.video.line.prompt', [$course, $module]) }}"
+                                      style="margin-top:6px; display:flex; gap:6px;"
+                                      onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='…';">
+                                    @csrf
+                                    <input type="hidden" name="slide_number" value="{{ $sn }}">
+                                    <input type="text" name="instruction" maxlength="2000" required placeholder="Ritocca con un'istruzione (es. «rendila più discorsiva»)"
+                                           style="flex:1; min-width:0; padding:6px 9px; border:1px solid #C8D0D0; border-radius:7px; font-size:0.8rem;">
+                                    <button style="padding:6px 12px; background:white; color:#55B1AE; border:1px solid #55B1AE; border-radius:7px; font-size:0.78rem; font-weight:600; cursor:pointer;">Ritocca</button>
+                                </form>
+                            </div>
+                        </div>
+                    @endforeach
+
+                    <div x-show="zoom" x-cloak @click="zoom = null" @keydown.escape.window="zoom = null"
+                         style="position:fixed; inset:0; z-index:1000; background:rgba(10,10,10,0.92); display:flex; align-items:center; justify-content:center;">
+                        <img :src="zoom" alt="" style="max-width:90vw; max-height:88vh; object-fit:contain;">
+                    </div>
+                </div>
+            @endif
+
+            {{-- V3 — render MP4: da copione confermato. Pronto → scarica. --}}
+            @if(($modVideo?->status ?? null) === 'ready' && $modVideo->file_path)
+                <div style="margin-top:14px; border-top:1px solid #F0F2F2; padding-top:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <span style="display:inline-block; padding:2px 9px; background:#3A8C89; color:white; border-radius:6px; font-size:0.72rem; font-weight:700;">🎬 Video pronto</span>
+                    @isset($modVideo->generation_meta['seconds'])<span style="font-size:0.75rem; color:#8A9696;">{{ (int) $modVideo->generation_meta['seconds'] }}s</span>@endisset
+                    @if($modVideo->published_at)
+                        <span style="display:inline-block; padding:2px 9px; background:#3A8C89; color:white; border-radius:6px; font-size:0.72rem; font-weight:700;">Pubblicato</span>
+                    @else
+                        <span style="display:inline-block; padding:2px 9px; background:#F5E6B8; color:#7A5C00; border-radius:6px; font-size:0.72rem; font-weight:700;">Bozza</span>
+                    @endif
+                    <span style="flex:1;"></span>
+                    <a href="{{ route('admin.courses.modules.video.download', [$course, $module]) }}" style="padding:7px 13px; background:white; color:#3A8C89; border:1px solid #3A8C89; border-radius:8px; font-size:0.8rem; font-weight:600; text-decoration:none;">&#11015; Scarica</a>
+                    @if($modVideo->published_at)
+                        <form method="POST" action="{{ route('admin.courses.modules.video.unpublish', [$course, $module]) }}"
+                              onsubmit="return confirm('Ritirare il video? I corsisti non lo vedranno più.') && (this.querySelector('button').disabled=true || true);">
+                            @csrf
+                            <button type="submit" style="padding:7px 13px; background:white; color:#A8521F; border:1px solid #A8521F; border-radius:8px; font-size:0.8rem; font-weight:600; cursor:pointer;">Ritira</button>
+                        </form>
+                    @else
+                        <form method="POST" action="{{ route('admin.courses.modules.video.publish', [$course, $module]) }}"
+                              onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').innerHTML='⏳ Pubblicazione…';">
+                            @csrf
+                            <button type="submit" style="padding:7px 14px; background:#3A8C89; color:white; border:none; border-radius:8px; font-size:0.8rem; font-weight:700; cursor:pointer;">&#10003; Pubblica</button>
+                        </form>
+                    @endif
+                </div>
+                @unless($modVideo->published_at)
+                    <p style="font-size:0.72rem; color:#8A9696;">Pubblicando, il video viene anche indicizzato (ricercabile). Indicizzazione gratuita per i video generati.</p>
+                @endunless
+            @endif
+            @if(($modVideo?->script_status ?? 'none') === 'confirmed')
+                <div style="margin-top:12px; border-top:1px solid #F0F2F2; padding-top:12px;" x-show="s !== 'generating'">
+                    <form method="POST" action="{{ route('admin.courses.modules.video.generate', [$course, $module]) }}"
+                          onsubmit="return confirm('Generare il video? Verrà sintetizzata la voce (ha un costo) e composto l\'mp4.') && (this.querySelector('button').disabled=true || true);">
+                        @csrf
+                        <button type="submit" style="padding:9px 16px; background:#A6192E; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:700; cursor:pointer;">🎬 {{ ($modVideo?->status ?? null) === 'ready' ? 'Rigenera video' : 'Genera video' }}</button>
+                    </form>
+                    <p style="margin-top:6px; font-size:0.72rem; color:#8A9696;">La voce TTS ha un costo: si genera solo dal copione confermato.</p>
+                </div>
+            @endif
+        </div>
+    </div>
+@endif
 
 {{-- ==================== DOCUMENTO PDF (P29) — renderer brandizzato Noscite, stale-then-regenerate ==================== --}}
 @php $modDoc = $module->document; @endphp
