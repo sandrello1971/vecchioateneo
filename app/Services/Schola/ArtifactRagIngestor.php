@@ -309,6 +309,7 @@ class ArtifactRagIngestor
         $rows = collect();
         foreach ($chunks as $i => $chunk) {
             $rows->push(DocumentRag::create(array_merge($scopeCols, [
+                'subject_id' => $artifact->subject_id, // materia del materiale/artefatto
                 'title' => $artifact->title,
                 'content' => $chunk['content'],
                 'chunk_index' => $i,

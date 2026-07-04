@@ -150,6 +150,7 @@ class LessonRagIngestor
                 'scope' => 'class',
                 'school_class_id' => $publication->school_class_id,
                 'teacher_id' => $lesson->teacher_id,
+                'subject_id' => $lesson->topic?->subject_id, // materia della lezione (via argomento)
                 'title' => $lesson->title,
                 'content' => $chunk['content'],
                 'chunk_index' => $i,

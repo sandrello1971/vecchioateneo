@@ -80,6 +80,9 @@
                       @keydown.enter.prevent="send()"></textarea>
             <button @click="send()" :disabled="loading || !question.trim()">Invia</button>
         </div>
+        <label style="display:flex; align-items:center; gap:6px; margin-top:8px; font-size:0.82rem; color:#8A9696; cursor:pointer;">
+            <input type="checkbox" x-model="connect"> Cerca collegamenti con altre materie
+        </label>
     </div>
 
     <script>
@@ -88,6 +91,7 @@
             messages: @json($messages->map(fn ($m) => ['role' => $m->role, 'content' => $m->content, 'sources' => $m->context_documents ?? []])->values()),
             question: '',
             loading: false,
+            connect: false,
             schoolClassId: @json($class->id),
             async send() {
                 const q = this.question.trim();
@@ -103,7 +107,7 @@
                             'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
                             'X-Requested-With': 'XMLHttpRequest',
                         },
-                        body: JSON.stringify({question: q, school_class_id: this.schoolClassId}),
+                        body: JSON.stringify({question: q, school_class_id: this.schoolClassId, connect: this.connect}),
                     });
                     const d = await r.json();
                     this.messages.push({role: 'assistant', content: d.answer || 'Risposta non disponibile.', sources: d.sources || []});
