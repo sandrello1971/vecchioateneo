@@ -94,8 +94,17 @@
                 <a href="{{ route('docente.materials.show', $p) }}" style="color:#55B1AE; text-decoration:none; font-size:0.78rem;">apri</a>
             </div>
         @empty
-            <p style="color:#8A9696; font-size:0.85rem;">Nessun materiale da organizzare. Caricane dalla sezione <a href="{{ route('docente.materials.index') }}" style="color:#55B1AE;">Materiali</a>.</p>
+            <p style="color:#8A9696; font-size:0.85rem;">Nessun materiale da organizzare. Caricane uno qui sotto oppure dalla sezione <a href="{{ route('docente.materials.index') }}" style="color:#55B1AE;">Materiali</a>.</p>
         @endforelse
+
+        {{-- Upload materiale nel pool di questo argomento: materia ereditata dall'argomento,
+             lezione non assegnata (resta "da organizzare"). Compare anche nella sezione Materiali. --}}
+        <details style="margin-top:12px;">
+            <summary style="cursor:pointer; color:#55B1AE; font-size:0.82rem; font-weight:600; list-style:none;">&#43; Carica un materiale nel pool</summary>
+            <div style="margin-top:12px;">
+                <x-material-upload-form :topic="$topic" :video-ai-dpa-missing="$videoAiDpaMissing" :external-types="$externalTypes" />
+            </div>
+        </details>
     </div>
 </div>
 

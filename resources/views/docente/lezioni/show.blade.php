@@ -33,8 +33,20 @@
                 <span style="font-size:0.7rem; font-weight:700; color:{{ $c }}; border:1px solid {{ $c }}; border-radius:4px; padding:1px 8px;">{{ $l }}</span>
             </div>
         @empty
-            <p style="color:#8A9696; font-size:0.85rem;">Nessun materiale assegnato. Vai all'<a href="{{ route('docente.topics.show', $lesson->topic_id) }}" style="color:#55B1AE;">argomento</a> per classificarne.</p>
+            <p style="color:#8A9696; font-size:0.85rem;">Nessun materiale assegnato. Caricane uno qui sotto oppure vai all'<a href="{{ route('docente.topics.show', $lesson->topic_id) }}" style="color:#55B1AE;">argomento</a> per classificare il pool.</p>
         @endforelse
+
+        {{-- Upload materiale direttamente nella lezione: nasce già legato a questa lezione,
+             materia ereditata dall'argomento. Compare anche nella sezione Materiali. --}}
+        <div x-data="{ open: false }" style="margin-top:12px; border-top:1px solid #F0F2F2; padding-top:12px;">
+            <button type="button" @click="open = !open" style="padding:7px 14px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.82rem; font-weight:600; cursor:pointer;">
+                <span x-show="!open">&#43; Aggiungi materiale</span>
+                <span x-show="open" x-cloak>Chiudi</span>
+            </button>
+            <div x-show="open" x-cloak style="margin-top:12px;">
+                <x-material-upload-form :lesson="$lesson" :video-ai-dpa-missing="$videoAiDpaMissing" :external-types="$externalTypes" />
+            </div>
+        </div>
     </div>
 
     {{-- Stato composizione (polling) --}}
@@ -445,8 +457,10 @@
 {{-- Stessa tipografia + KaTeX della vista studente: l'anteprima è IDENTICA. --}}
 @include('schola.partials.lesson-typography')
 @include('schola.partials.lesson-katex')
-@push('scripts')
+@pushOnce('scripts', 'alpine-cdn')
 <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+@endPushOnce
+@push('scripts')
 <script>
 function lessonStatus(id, initial) {
     return {

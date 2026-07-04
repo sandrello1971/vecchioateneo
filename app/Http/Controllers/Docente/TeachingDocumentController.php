@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Docente;
 
 use App\Http\Controllers\Controller;
 use App\Jobs\ExtractTeachingDocumentJob;
+use App\Models\Lesson;
 use App\Models\Student;
 use App\Models\Subject;
 use App\Models\TeachingDocument;
+use App\Models\Topic;
 use App\Support\VideoAiConsent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -50,8 +52,7 @@ class TeachingDocumentController extends Controller
     {
         $subjects = Subject::orderBy('name')->get();
         // R5 — il docente è di una scuola senza consenso DPA video-AI? → audio/video/foto bloccati.
-        $teacher = Student::find($this->teacherId());
-        $videoAiDpaMissing = $teacher && $teacher->school_id && !optional($teacher->school)->hasVideoAiDpa();
+        $videoAiDpaMissing = VideoAiConsent::dpaMissing(Student::find($this->teacherId()));
         $externalTypes = VideoAiConsent::externalSourceTypes();
 
         return view('docente.materiali.create', compact('subjects', 'videoAiDpaMissing', 'externalTypes'));
@@ -64,7 +65,26 @@ class TeachingDocumentController extends Controller
             'source_type' => 'required|in:audio,youtube,photos,pdf,docx,text',
             'subject_id' => 'nullable|uuid|exists:subjects,id',
             'tags' => 'nullable|string|max:500',
+            // Contesto di upload: dalla Lezione (materiale legato) o dal pool Argomento
+            // (materia ereditata). Assenti entrambi = upload autonomo dalla sezione Materiali.
+            'lesson_id' => 'nullable|uuid|exists:lessons,id',
+            'topic_id' => 'nullable|uuid|exists:topics,id',
         ]);
+
+        // Risoluzione contesto: la materia è ereditata dall'argomento e il redirect
+        // torna alla pagina di origine. Verifica sempre la proprietà del docente.
+        $lesson = null;
+        $topic = null;
+        $subjectId = $base['subject_id'] ?? null;
+        if (!empty($base['lesson_id'])) {
+            $lesson = Lesson::with('topic')->findOrFail($base['lesson_id']);
+            abort_unless($lesson->teacher_id === $this->teacherId(), 403);
+            $subjectId = $lesson->topic?->subject_id;
+        } elseif (!empty($base['topic_id'])) {
+            $topic = Topic::findOrFail($base['topic_id']);
+            abort_unless($topic->teacher_id === $this->teacherId(), 403);
+            $subjectId = $topic->subject_id;
+        }
 
         // Validazioni specifiche per tipo sorgente.
         match ($base['source_type']) {
@@ -114,7 +134,8 @@ class TeachingDocumentController extends Controller
             'teacher_id' => $this->teacherId(),
             'title' => $base['title'],
             'source_type' => $base['source_type'],
-            'subject_id' => $base['subject_id'] ?? null,
+            'subject_id' => $subjectId,
+            'lesson_id' => $lesson?->id, // caricato dalla lezione → già classificato; altrimenti pool
             'tags' => $this->parseTags($request->input('tags')),
             'status' => 'pending',
         ]);
@@ -154,8 +175,15 @@ class TeachingDocumentController extends Controller
 
         ExtractTeachingDocumentJob::dispatch($doc->id)->afterResponse();
 
-        return redirect()->route('docente.materials.show', $doc)
-            ->with('success', 'Materiale caricato. Estrazione del testo in corso…');
+        $msg = 'Materiale caricato. Estrazione del testo in corso…';
+        if ($lesson) {
+            return redirect()->route('docente.lessons.show', $lesson)->with('success', $msg);
+        }
+        if ($topic) {
+            return redirect()->route('docente.topics.show', $topic)->with('success', $msg);
+        }
+
+        return redirect()->route('docente.materials.show', $doc)->with('success', $msg);
     }
 
     public function show(TeachingDocument $document)

@@ -23,6 +23,15 @@ class VideoAiConsent
     }
 
     /**
+     * Il docente è di una SCUOLA senza consenso DPA video-AI? → nei form di upload
+     * audio/video/foto vanno disabilitati. Centralizzato per riuso (materiali/lezione/argomento).
+     */
+    public static function dpaMissing(?Student $teacher): bool
+    {
+        return (bool) ($teacher && $teacher->school_id && !optional($teacher->school)->hasVideoAiDpa());
+    }
+
+    /**
      * L'elaborazione di questo materiale è BLOCCATA per mancanza di consenso DPA?
      * True solo se: docente di una SCUOLA + tipo che usa sub-processori esterni +
      * scuola senza consenso DPA video-AI.

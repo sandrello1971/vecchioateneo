@@ -53,6 +53,39 @@
     </div>
     @endif
 
+    {{-- Condivisione con altri docenti (ambito materia/tutti) — a estrazione completata --}}
+    @if($document->status === 'ready')
+    <div style="background:white; border:1px solid #C8D0D0; border-radius:10px; padding:18px; margin-bottom:16px;">
+        <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Condivisione con altri docenti</div>
+        @if(in_array($document->source_type, ['photos','pdf'], true))
+            <p style="font-size:0.82rem; color:#A8521F;">I materiali da foto/PDF non sono condivisibili (distribuzione di testo potenzialmente protetto).</p>
+        @else
+            <p style="font-size:0.8rem; color:#8A9696; margin-bottom:10px;">
+                @if($document->share_scope === 'all') Attualmente condiviso con <strong>tutti i docenti</strong>.
+                @elseif($document->share_scope === 'subject') Attualmente condiviso con i <strong>docenti della stessa materia</strong> nella tua scuola.
+                @else Attualmente <strong>privato</strong>. @endif
+                Chi ha accesso può vederlo, importarlo e trovarlo con Minerva.
+            </p>
+            <form method="POST" action="{{ route('docente.materials.sharing', $document) }}" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+                @csrf @method('PATCH')
+                <div>
+                    <label style="font-size:0.72rem; color:#8A9696; display:block;">Ambito</label>
+                    <select name="scope" style="padding:8px 10px; border:1px solid #C8D0D0; border-radius:8px; font-size:0.82rem;">
+                        <option value="none" @selected($document->share_scope === null)>Privato</option>
+                        <option value="subject" @selected($document->share_scope === 'subject') @disabled(!$document->subject_id)>Stessa materia (stessa scuola)@if(!$document->subject_id) — assegna una materia @endif</option>
+                        <option value="all" @selected($document->share_scope === 'all')>Tutti i docenti</option>
+                    </select>
+                </div>
+                <label style="font-size:0.78rem; color:#4A5252; display:flex; align-items:center; gap:6px;">
+                    <input type="checkbox" name="rights_ack" value="1"> Confermo di avere i diritti sul contenuto
+                    <span style="color:#8A9696;">(richiesto alla prima condivisione)</span>
+                </label>
+                <button type="submit" style="padding:9px 16px; background:#3A8C89; color:white; border:none; border-radius:8px; font-size:0.82rem; font-weight:700; cursor:pointer;">Aggiorna condivisione</button>
+            </form>
+        @endif
+    </div>
+    @endif
+
     {{-- Generazione artefatti (solo a estrazione completata) --}}
     @if($document->status === 'ready')
     <div style="background:white; border:1px solid #C8D0D0; border-radius:10px; padding:18px; margin-bottom:16px;">

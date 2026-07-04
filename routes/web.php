@@ -239,6 +239,14 @@ Route::prefix('docente')->name('docente.')->middleware(['student.auth', 'profess
     Route::get('/materiali/{document}/file/{index}', [App\Http\Controllers\Docente\TeachingDocumentController::class, 'downloadSource'])->name('materials.download');
     Route::get('/materiali/{document}/stato', [App\Http\Controllers\Docente\TeachingDocumentController::class, 'status'])->name('materials.status');
     Route::post('/materiali/{document}/retry', [App\Http\Controllers\Docente\TeachingDocumentController::class, 'retry'])->name('materials.retry')->middleware('throttle:schola-generate');
+    // Condivisione del materiale con altri docenti (ambito materia/tutti).
+    Route::patch('/materiali/{document}/condivisione', [App\Http\Controllers\Docente\MaterialSharingController::class, 'update'])->name('materials.sharing');
+
+    // Libreria dei materiali condivisi da altri docenti (vedi / scarica / importa).
+    Route::get('/materiali-condivisi', [App\Http\Controllers\Docente\SharedMaterialLibraryController::class, 'index'])->name('materials.shared.index');
+    Route::get('/materiali-condivisi/{document}', [App\Http\Controllers\Docente\SharedMaterialLibraryController::class, 'show'])->name('materials.shared.show');
+    Route::get('/materiali-condivisi/{document}/file/{index}', [App\Http\Controllers\Docente\SharedMaterialLibraryController::class, 'download'])->name('materials.shared.download');
+    Route::post('/materiali-condivisi/{document}/importa', [App\Http\Controllers\Docente\SharedMaterialLibraryController::class, 'import'])->name('materials.shared.import')->middleware('throttle:schola-generate');
 
     // Argomenti e Lezioni (fase 3, P18) — solo organizzazione, niente generazione
     Route::get('/argomenti', [App\Http\Controllers\Docente\TopicController::class, 'index'])->name('topics.index');

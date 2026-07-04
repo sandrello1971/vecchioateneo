@@ -3,8 +3,11 @@
 namespace Tests\Feature\Schola;
 
 use App\Jobs\ExtractTeachingDocumentJob;
+use App\Models\Lesson;
 use App\Models\Student;
+use App\Models\Subject;
 use App\Models\TeachingDocument;
+use App\Models\Topic;
 use App\Services\Schola\TeachingDocumentExtractor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -329,6 +332,73 @@ class TeachingDocumentTest extends TestCase
         $this->asProf($prof)->post(route('docente.materials.retry', $failed))->assertRedirect();
         Bus::assertDispatchedAfterResponse(ExtractTeachingDocumentJob::class);
         $this->assertSame('pending', $failed->fresh()->status);
+    }
+
+    // ===== Upload context-aware: dalla Lezione e dal pool Argomento =====
+
+    private function topicWithLesson(Student $p): array
+    {
+        $subject = Subject::create(['name' => 'Fisica ' . uniqid(), 'is_custom' => true]);
+        $topic = Topic::create([
+            'teacher_id' => $p->id, 'subject_id' => $subject->id, 'name' => 'Meccanica', 'position' => 1,
+        ]);
+        $lesson = Lesson::create([
+            'topic_id' => $topic->id, 'teacher_id' => $p->id, 'title' => 'Lez 1',
+            'position' => 1, 'generation_status' => 'draft',
+        ]);
+
+        return [$subject, $topic, $lesson];
+    }
+
+    public function test_store_from_lesson_links_lesson_and_inherits_subject(): void
+    {
+        Bus::fake();
+        Storage::fake('local');
+        $prof = $this->prof();
+        [$subject, , $lesson] = $this->topicWithLesson($prof);
+
+        $this->asProf($prof)->post(route('docente.materials.store'), [
+            'title' => 'Da lezione', 'source_type' => 'text', 'text_content' => 'Contenuto',
+            'lesson_id' => $lesson->id,
+        ])->assertRedirect(route('docente.lessons.show', $lesson))->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('teaching_documents', [
+            'teacher_id' => $prof->id, 'title' => 'Da lezione',
+            'lesson_id' => $lesson->id, 'subject_id' => $subject->id, // materia ereditata dall'argomento
+        ]);
+        Bus::assertDispatchedAfterResponse(ExtractTeachingDocumentJob::class);
+    }
+
+    public function test_store_from_topic_stays_in_pool_and_inherits_subject(): void
+    {
+        Bus::fake();
+        Storage::fake('local');
+        $prof = $this->prof();
+        [$subject, $topic] = $this->topicWithLesson($prof);
+
+        $this->asProf($prof)->post(route('docente.materials.store'), [
+            'title' => 'Nel pool', 'source_type' => 'text', 'text_content' => 'Contenuto',
+            'topic_id' => $topic->id,
+        ])->assertRedirect(route('docente.topics.show', $topic))->assertSessionHasNoErrors();
+
+        $doc = TeachingDocument::where('title', 'Nel pool')->firstOrFail();
+        $this->assertNull($doc->lesson_id);                 // resta nel pool
+        $this->assertSame($subject->id, $doc->subject_id);  // materia ereditata
+    }
+
+    public function test_store_from_others_lesson_is_forbidden(): void
+    {
+        Bus::fake();
+        Storage::fake('local');
+        $owner = $this->prof();
+        $other = $this->prof();
+        [, , $lesson] = $this->topicWithLesson($owner);
+
+        $this->asProf($other)->post(route('docente.materials.store'), [
+            'title' => 'Intruso', 'source_type' => 'text', 'text_content' => 'x',
+            'lesson_id' => $lesson->id,
+        ])->assertForbidden();
+        Bus::assertNothingDispatched();
     }
 
     private function binaryExists(string $bin): bool

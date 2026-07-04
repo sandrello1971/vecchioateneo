@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Docente;
 
 use App\Http\Controllers\Controller;
 use App\Models\Lesson;
+use App\Models\Student;
 use App\Models\TeachingDocument;
 use App\Models\Topic;
+use App\Support\VideoAiConsent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -56,9 +58,14 @@ class LessonController extends Controller
         $draft = $lesson->presentations()->whereNull('published_at')->latest()->first();
         $published = $lesson->presentations()->whereNotNull('published_at')->latest('published_at')->first();
 
+        // Upload materiale direttamente dalla lezione (gate DPA come nella sezione Materiali).
+        $videoAiDpaMissing = VideoAiConsent::dpaMissing(Student::find($this->teacherId()));
+        $externalTypes = VideoAiConsent::externalSourceTypes();
+
         return view('docente.lezioni.show', compact(
             'lesson', 'materials', 'artifacts', 'teacherClasses', 'publishedClassIds',
-            'bodyHtml', 'teacherNotes', 'draft', 'published'
+            'bodyHtml', 'teacherNotes', 'draft', 'published',
+            'videoAiDpaMissing', 'externalTypes'
         ));
     }
 
