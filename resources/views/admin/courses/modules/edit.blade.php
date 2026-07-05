@@ -426,12 +426,19 @@
             </div>
             <p style="font-size:0.78rem; color:#8A9696; margin-bottom:12px;">Copione narrato per slide (Claude). Resta in bozza: nessun costo voce finché non lo confermi.</p>
 
+            <style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}</style>
             <template x-if="s === 'generating'">
-                <p style="font-size:0.82rem; color:#E28A53;">Generazione del copione in corso… la pagina si aggiorna da sola.</p>
+                <div style="margin-top:6px; padding:10px 14px; background:#FBF3E2; border-left:4px solid #E28A53; border-radius:6px; display:flex; align-items:center; gap:10px; color:#9A6B2E; font-size:0.85rem; font-weight:600;">
+                    <span style="width:11px;height:11px;border-radius:50%;background:#E28A53;display:inline-block;animation:pulse 1s infinite;"></span>
+                    <span>Generazione video in corso (sintesi voce + montaggio MP4)… richiede qualche minuto, la pagina si aggiorna da sola.</span>
+                </div>
             </template>
 
-            @if(($modVideo?->status ?? null) === 'failed' && ($modVideo->generation_meta['failure_reason'] ?? null))
-                <p style="font-size:0.82rem; color:#A8521F;">{{ $modVideo->generation_meta['failure_reason'] }}</p>
+            @if(($modVideo?->status ?? null) === 'failed')
+                <div style="margin-top:6px; padding:10px 14px; background:#FDECE2; border-left:4px solid #A8521F; border-radius:6px; color:#A8521F; font-size:0.82rem;">
+                    &#10007; <strong>Generazione video fallita.</strong>@if($modVideo->generation_meta['failure_reason'] ?? null) {{ $modVideo->generation_meta['failure_reason'] }}@endif
+                    <div style="margin-top:4px; color:#8A9696; font-size:0.75rem;">Risolvi la causa e premi «{{ ($modVideo?->status ?? null) === 'ready' ? 'Rigenera video' : 'Genera video' }}» per riprovare.</div>
+                </div>
             @endif
 
             <div x-show="s !== 'generating'">
