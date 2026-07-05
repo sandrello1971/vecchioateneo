@@ -128,6 +128,9 @@ class ChatController extends Controller
             }
         }
 
+        // Grounding stretto: la garanzia "niente conoscenza generale" è cablata nel
+        // system prompt (buildMinervaSystemPrompt). Con contesto vuoto + prompt rigido
+        // il modello risponde "non è nei tuoi materiali" invece di inventare.
         $reply = $this->callClaudeForMinerva($data['question'], $data['history'] ?? [], $context, $courseNames, $mode, $isInstructor);
 
         return response()->json([
@@ -194,9 +197,11 @@ class ChatController extends Controller
 
 Regole:
 - Rispondi in italiano
+- Rispondi ESCLUSIVAMENTE in base ai materiali forniti nel CONTESTO qui sotto. NON integrare con la tua conoscenza generale né con informazioni esterne al contesto.
+- Se il contesto copre solo in parte la domanda, rispondi su ciò che è coperto e dichiara esplicitamente cosa manca.
+- Non inventare. Se l'informazione NON è nei materiali forniti, dillo chiaramente e invita a rivolgersi al docente: NON rispondere dalla tua conoscenza generale.
 - Se citi un video con timestamp, formatta come [MM:SS] — lo studente può cliccarci
 - Se citi un documento, cita il titolo
-- Non inventare. Se l'informazione non è nei materiali forniti, dillo onestamente e usa il tuo buon senso generale
 - Sii diretto, chiaro, incoraggiante
 
 {$context}

@@ -150,6 +150,12 @@ class BrandingAndAssistantIdentityTest extends TestCase
         $this->assertStringContainsString('[MM:SS]', $prompt);
         $this->assertStringContainsString('Rispondi in 2-3 frasi brevi', $prompt);
         $this->assertStringContainsString('Lo studente ha accesso', $prompt);
+
+        // Grounding stretto: Minerva NON deve integrare con la conoscenza generale
+        // (regressione: rispondeva "dalla sua memoria" quando il RAG non copriva la
+        // domanda → risposte plausibili ma errate). Scelta DELIBERATA.
+        $this->assertStringContainsString('NON rispondere dalla tua conoscenza generale', $prompt);
+        $this->assertStringNotContainsString('usa il tuo buon senso generale', $prompt);
     }
 
     public function test_minerva_instructor_prompt_preserves_note_formatore_block(): void
