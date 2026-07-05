@@ -36,6 +36,21 @@ semantici → risultati sbagliati. NB: se il termine non è indicizzato (il vide
 parla) non c'è nulla da trovare; per i video **generati** i frame sono solo testo-slide,
 per i **caricati** c'è la Vision.
 
+## 4. `POST /api/videos/{video_id}/ask` — `backend/api/main.py`
+Q&A GROUNDED su un video indicizzato ("Chiedi al video" di atheneum). Chiama
+`engine.chat(video_id, question, history)` → `{answer, timestamps, sources}`. A
+differenza di `/chat`, NON passa dal `ProgressTracker` e accetta id `[A-Za-z0-9_-]{1,80}`
+(difesa path-traversal), quindi vale sia per i video **caricati** (id MD5) sia per i
+**generati** (id `gen_...`). Auth interna globale. Atheneum: `VideoAIService::askVideo`.
+
+## 5. Fix modello Claude — `backend/chat/engine.py` + `backend/ingest/vision_analyzer.py`
+Il modello hardcoded `claude-sonnet-4-20250514` restituiva **404 (model not found)**
+sull'API key corrente → rompeva sia la chat/ask del video SIA **l'analisi Vision dei
+video caricati** (`vision_analyzer.py`). Sostituito con `claude-sonnet-4-5` (valido,
+lo stesso usato da atheneum, supporta la vision) in `chat()`, `global_chat()` e
+`analyze_frames_batch`. CRITICO: senza questo fix i video caricati non vengono
+analizzati nelle immagini.
+
 ## Come riportare
 Le firme/funzioni da (ri)portare: `index_video_chunks`, `get_chunks_text` (main.py),
 `search_across_videos`, `_salient_terms`, `_keyword_score` (chat/engine.py),

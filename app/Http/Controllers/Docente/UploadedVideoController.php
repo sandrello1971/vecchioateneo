@@ -145,6 +145,17 @@ class UploadedVideoController extends Controller
         return response()->json(['matches' => $this->search->perVideo($video->video_ai_id, $q)]);
     }
 
+    /** "Chiedi al video" (anteprima proprietario): Q&A grounded sul video. */
+    public function ask(Request $request, UploadedVideo $video, \App\Services\VideoAIService $ai)
+    {
+        $this->authorizeOwner($video);
+        $q = trim((string) $request->input('question', ''));
+        abort_if($q === '', 422, 'Scrivi una domanda.');
+        abort_unless($video->isSearchable(), 404);
+
+        return response()->json($ai->askVideo($video->video_ai_id, $q, (array) $request->input('history', [])));
+    }
+
     /**
      * Pubblica il video: visibile agli studenti delle classi dove la lezione è
      * pubblicata + indicizza il suo transcript come scope='class' (RAG Minerva di

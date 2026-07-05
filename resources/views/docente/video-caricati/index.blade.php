@@ -27,6 +27,7 @@
                     :title="$uv->title"
                     :stream-url="route('docente.videos.stream', $uv)"
                     :search-url="route('docente.videos.search', $uv)"
+                    :ask-url="route('docente.videos.ask', $uv)"
                     status="ready" />
             @elseif($uv->status === 'failed')
                 <p style="font-size:0.82rem; color:#A8521F;">&#10007; Analisi non riuscita{{ $uv->failure_reason ? ': ' . $uv->failure_reason : '' }}.</p>

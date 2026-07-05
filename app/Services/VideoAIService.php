@@ -66,6 +66,28 @@ class VideoAIService
         return $response->json();
     }
 
+    /**
+     * Schola — "Chiedi al video": Q&A GROUNDED su un video indicizzato (generato o
+     * caricato). Ritorna {answer, timestamps, sources}. A differenza di chat(),
+     * l'endpoint /ask lavora sulla collection senza ProgressTracker → vale anche per
+     * i video generati (id 'gen_...'). Errore → risposta di cortesia (best-effort).
+     * @return array{answer: string, timestamps: array, sources: array}
+     */
+    public function askVideo(string $videoId, string $question, array $history = []): array
+    {
+        $response = $this->client()->timeout(60)
+            ->post("{$this->baseUrl}/api/videos/{$videoId}/ask", [
+                'question' => $question,
+                'history' => $history,
+            ]);
+
+        if ($response->failed()) {
+            return ['answer' => 'Non riesco a interrogare il video in questo momento. Riprova tra poco.', 'timestamps' => [], 'sources' => []];
+        }
+
+        return $response->json();
+    }
+
     public function getTranscript(string $videoId): array
     {
         $response = $this->client()->timeout(30)

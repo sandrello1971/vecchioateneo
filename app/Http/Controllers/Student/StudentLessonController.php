@@ -195,6 +195,35 @@ class StudentLessonController extends Controller
         return response()->json(['matches' => $search->perVideo($uploaded->video_ai_id, $q)]);
     }
 
+    /** "Chiedi al video" su un video caricato pubblicato: Q&A grounded. */
+    public function uploadedVideoAsk(SchoolClass $class, Lesson $lesson, string $video, \Illuminate\Http\Request $request, \App\Services\VideoAIService $ai)
+    {
+        $uploaded = $this->publishedUploadedVideo($class, $lesson, $video);
+        $q = trim((string) $request->input('question', ''));
+        abort_if($q === '', 422, 'Scrivi una domanda.');
+        abort_unless($uploaded->video_ai_id, 404);
+
+        return response()->json($ai->askVideo($uploaded->video_ai_id, $q, (array) $request->input('history', [])));
+    }
+
+    /** "Chiedi al video" sul video narrato (generato) pubblicato della lezione. */
+    public function videoAsk(SchoolClass $class, Lesson $lesson, \Illuminate\Http\Request $request, \App\Services\VideoAIService $ai)
+    {
+        $student = $this->currentStudent();
+        $this->assertActiveEnrollment($class, $student->id);
+        $this->assertLessonPublished($lesson, $class);
+        $q = trim((string) $request->input('question', ''));
+        abort_if($q === '', 422, 'Scrivi una domanda.');
+
+        $publishedPresId = $lesson->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->value('id');
+        $video = $publishedPresId ? $lesson->videos()->where('presentation_id', $publishedPresId)
+            ->where('status', 'ready')->whereNotNull('published_at')->latest('published_at')->first() : null;
+        abort_unless($video && $video->video_ai_id, 404);
+
+        return response()->json($ai->askVideo($video->video_ai_id, $q, (array) $request->input('history', [])));
+    }
+
     /**
      * Download della presentazione .pptx di una lezione pubblicata (P21). Lo
      * studente può SOLO scaricare (niente generazione). Stesso criterio di accesso

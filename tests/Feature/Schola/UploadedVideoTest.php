@@ -131,6 +131,40 @@ class UploadedVideoTest extends TestCase
         $this->asProf($prof)->post(route('docente.videos.publish', $processing))->assertStatus(422);
     }
 
+    public function test_owner_can_ask_the_video_grounded_qa(): void
+    {
+        $prof = $this->prof($this->school());
+        $video = UploadedVideo::create([
+            'teacher_id' => $prof->id, 'title' => 'V', 'status' => 'ready', 'video_ai_id' => 'abc123',
+        ]);
+
+        $mock = Mockery::mock(VideoAIService::class);
+        $mock->shouldReceive('askVideo')->once()
+            ->with('abc123', 'cosa dice il video?', [])
+            ->andReturn(['answer' => 'Il video tratta X [00:29].', 'timestamps' => ['00:29'], 'sources' => []]);
+        $this->app->instance(VideoAIService::class, $mock);
+
+        $res = $this->asProf($prof)->postJson(route('docente.videos.ask', $video), ['question' => 'cosa dice il video?']);
+
+        $res->assertOk()->assertJsonPath('answer', 'Il video tratta X [00:29].');
+    }
+
+    public function test_ask_requires_owner_and_ready_video(): void
+    {
+        $school = $this->school();
+        $owner = $this->prof($school);
+        $other = $this->prof($school);
+        $ready = UploadedVideo::create(['teacher_id' => $owner->id, 'title' => 'V', 'status' => 'ready', 'video_ai_id' => 'x']);
+        $processing = UploadedVideo::create(['teacher_id' => $owner->id, 'title' => 'P', 'status' => 'processing']);
+
+        // Non proprietario → 403.
+        $this->asProf($other)->postJson(route('docente.videos.ask', $ready), ['question' => 'q'])->assertForbidden();
+        // Non ancora pronto (non interrogabile) → 404.
+        $this->asProf($owner)->postJson(route('docente.videos.ask', $processing), ['question' => 'q'])->assertNotFound();
+        // Domanda vuota → 422.
+        $this->asProf($owner)->postJson(route('docente.videos.ask', $ready), ['question' => '  '])->assertStatus(422);
+    }
+
     public function test_ingest_job_marks_ready_and_creates_transcript_artifact_for_minerva(): void
     {
         Bus::fake();
