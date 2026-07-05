@@ -30,6 +30,7 @@
             <thead><tr style="background:#F5F7F7; text-align:left; color:#4A5252;">
                 <th style="padding:10px 14px;">Nome</th><th style="padding:10px 14px;">Email / Username</th>
                 <th style="padding:10px 14px;">Classe</th><th style="padding:10px 14px;">Nascita</th><th style="padding:10px 14px;">Stato</th>
+                <th style="padding:10px 14px; text-align:right;">Azioni</th>
             </tr></thead>
             <tbody>
             @forelse($students as $s)
@@ -43,9 +44,12 @@
                         @elseif($s->is_active)<span style="font-size:0.72rem; color:#3A8C89;">attivo</span>
                         @else<span style="font-size:0.72rem; color:#A8521F;">disattivato</span>@endif
                     </td>
+                    <td style="padding:10px 14px; text-align:right;">
+                        <a href="{{ route('scuola.studenti.edit', $s) }}" style="color:#3A8C89; font-weight:600; text-decoration:none;">Modifica</a>
+                    </td>
                 </tr>
             @empty
-                <tr><td colspan="5" style="padding:18px 14px; color:#8A9696;">Nessuno studente. Importa un CSV per iniziare.</td></tr>
+                <tr><td colspan="6" style="padding:18px 14px; color:#8A9696;">Nessuno studente. Importa un CSV per iniziare.</td></tr>
             @endforelse
             </tbody>
         </table>

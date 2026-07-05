@@ -586,6 +586,54 @@ TXT;
     }
 
     /**
+     * Minerva "school-wide" del docente (chatbot floating dell'area insegnanti):
+     * risponde su TUTTA la sua documentazione scolastica — i propri materiali
+     * (teacher_private), la Biblioteca di scuola (teacher_shared: admin + condivisi
+     * scuola/materia) e il pubblicato delle classi che INSEGNA (cattedre + classi
+     * possedute). Esclude classi non insegnate e le bozze private di altri docenti.
+     * Risposta con FONTI citate. Nessun filtro materia (connect=true).
+     */
+    public function teacherSchoolAsk(Request $request)
+    {
+        $student = Student::find(session('student_id'));
+        abort_unless($student && $student->isProfessor(), 403);
+
+        $data = $request->validate([
+            'question' => 'required|string|max:4000',
+            'history' => 'nullable|array',
+            'history.*.role' => 'required_with:history|in:user,assistant',
+            'history.*.content' => 'required_with:history|string',
+        ]);
+
+        // Classi del docente: cattedre (regime scuola) + classi possedute (regime libero).
+        $classIds = \App\Models\TeachingAssignment::where('teacher_id', $student->id)
+            ->pluck('school_class_id')
+            ->merge(SchoolClass::where('teacher_id', $student->id)->pluck('id'))
+            ->filter()->unique()->values()->all();
+
+        $result = $this->rag->searchClassScopedScored($data['question'], $classIds, $student->id, 6, null, null, null, true);
+
+        // GATE §5: nessun materiale pertinente → non si chiama il modello.
+        if ($result['docs']->isEmpty()) {
+            return response()->json([
+                'answer' => 'Non trovo questo nella documentazione della tua scuola. Prova con altre parole, oppure carica/condividi un materiale che copra questo argomento.',
+                'sources' => [],
+                'gate' => 'empty',
+            ]);
+        }
+
+        [$context, $sources] = $this->buildClassContextAndSources($result['docs'], true);
+        $reply = $this->callClaudeForClass($data['question'], $data['history'] ?? [], $context, true);
+
+        return response()->json([
+            'answer' => $reply['content'],
+            'sources' => $sources,
+            'tokens' => $reply['tokens'] ?? null,
+            'gate' => 'answered',
+        ]);
+    }
+
+    /**
      * Ruolo nel contesto classe: true=docente proprietario, false=studente con
      * iscrizione ATTIVA, null=nessun accesso (pending/removed/estraneo).
      */

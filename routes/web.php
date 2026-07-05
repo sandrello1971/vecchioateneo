@@ -222,6 +222,8 @@ Route::prefix('docente')->name('docente.')->middleware(['student.auth', 'profess
     Route::patch('/classi/{class}/studenti/{enrollment}', [App\Http\Controllers\Docente\ClassRosterController::class, 'update'])->name('classes.roster.update');
     // Minerva di classe lato docente (scope teacher_private + class). Stessa view, POST su /minerva/ask.
     Route::get('/classi/{class}/minerva', [App\Http\Controllers\Student\ChatController::class, 'showClass'])->name('classes.minerva');
+    // Chatbot floating docente: risponde su tutta la sua documentazione scolastica (con fonti).
+    Route::post('/minerva/ask', [App\Http\Controllers\Student\ChatController::class, 'teacherSchoolAsk'])->middleware('throttle:minerva-chat')->name('minerva.ask');
 
     // Cruscotto (pacchetto 8)
     Route::get('/classi/{class}/attivita', [App\Http\Controllers\Docente\ClassActivityController::class, 'index'])->name('classes.activity');
@@ -357,6 +359,12 @@ Route::prefix('scuola')->name('scuola.')->middleware(['school_admin', 'student.p
     Route::get('/studenti/import/{batch}/risultato', [App\Http\Controllers\Scuola\StudentImportController::class, 'result'])->name('studenti.import.result');
     Route::get('/studenti/import/{batch}/credenziali.csv', [App\Http\Controllers\Scuola\StudentImportController::class, 'credentialsDownload'])->name('studenti.import.credentials');
     Route::post('/studenti/import/{batch}/discard', [App\Http\Controllers\Scuola\StudentImportController::class, 'discard'])->name('studenti.import.discard');
+
+    // Modifica singolo studente: correzione dati + reset password/reinvio invito + attiva/disattiva
+    Route::get('/studenti/{student}/modifica', [App\Http\Controllers\Scuola\StudentController::class, 'edit'])->name('studenti.edit');
+    Route::patch('/studenti/{student}', [App\Http\Controllers\Scuola\StudentController::class, 'update'])->name('studenti.update');
+    Route::post('/studenti/{student}/reset-password', [App\Http\Controllers\Scuola\StudentController::class, 'resetPassword'])->name('studenti.reset-password');
+    Route::patch('/studenti/{student}/stato', [App\Http\Controllers\Scuola\StudentController::class, 'toggleActive'])->name('studenti.toggle');
 
     // Classi e cattedre (P15): gestione segreteria
     Route::get('/classi', [App\Http\Controllers\Scuola\ClassController::class, 'index'])->name('classi.index');

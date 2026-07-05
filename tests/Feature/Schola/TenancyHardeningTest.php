@@ -115,8 +115,10 @@ class TenancyHardeningTest extends TestCase
         $bSchool = $this->school('Scuola B');
         $teacherB = $this->member($bSchool, 'professor');
 
-        // Indice classi di B: non vede la 3A di A
-        $this->as($teacherB)->get(route('docente.classes.index'))->assertOk()->assertDontSee('3A');
+        // Indice classi di B: non vede la 3A di A (asserzione precisa sull'URL della
+        // classe di A, non su una sottostringa fragile — "3A" collide coi colori brand).
+        $this->as($teacherB)->get(route('docente.classes.index'))->assertOk()
+            ->assertDontSee(route('docente.classes.show', $a['class']));
         // Vista classe di A → 403 (niente cattedra)
         $this->as($teacherB)->get(route('docente.classes.show', $a['class']))->assertForbidden();
         // Minerva classe di A → 403
