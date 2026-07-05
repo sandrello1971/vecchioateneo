@@ -71,9 +71,11 @@ class StudentLessonController extends Controller
 
         // Presentazione .pptx pronta (P21): scaricabile, mai generabile dallo studente.
         // Solo la versione PUBBLICATA è visibile: le bozze del formatore restano nascoste.
-        $publishedPresId = $lesson->presentations()->where('status', 'ready')
-            ->whereNotNull('published_at')->latest('published_at')->value('id');
-        $hasPresentation = $publishedPresId !== null;
+        $publishedPres = $lesson->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->first();
+        $publishedPresId = $publishedPres?->id;
+        $hasPresentation = $publishedPres !== null;
+        $presentationSlides = (int) ($publishedPres->generation_meta['slides'] ?? 0);
 
         // V4 — video pubblicato, SOLO se legato alla presentazione pubblicata corrente
         // (un video da una presentazione ritirata/cambiata non resta esposto).
@@ -82,7 +84,7 @@ class StudentLessonController extends Controller
 
         return view('student.lezioni.show', compact(
             'class', 'lesson', 'publication', 'bodyHtml', 'mediaMaterials', 'notes', 'teacherNotes',
-            'generated', 'usage', 'hasPresentation', 'hasVideo'
+            'generated', 'usage', 'hasPresentation', 'hasVideo', 'presentationSlides'
         ));
     }
 
@@ -106,6 +108,31 @@ class StudentLessonController extends Controller
         abort_unless($video && $video->file_path && Storage::disk('local')->exists($video->file_path), 404);
 
         return response()->file(Storage::disk('local')->path($video->file_path), ['Content-Type' => 'video/mp4']);
+    }
+
+    /**
+     * P21 — immagine PNG della n-esima slide della presentazione PUBBLICATA, per il
+     * visualizzatore (lightbox) dello studente. Stesso gate: iscrizione attiva +
+     * lezione pubblicata. Le bozze del docente restano nascoste.
+     */
+    public function presentationSlide(SchoolClass $class, Lesson $lesson, int $n, \App\Services\Schola\SlidePreviewService $preview)
+    {
+        $student = $this->currentStudent();
+        $this->assertActiveEnrollment($class, $student->id);
+        $this->assertLessonPublished($lesson, $class);
+
+        $presentation = $lesson->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->first();
+        abort_unless($presentation && $presentation->file_path
+            && Storage::disk('local')->exists($presentation->file_path), 404);
+
+        $images = $preview->imagesFor($presentation->file_path);
+        $relPath = $images[$n - 1] ?? abort(404);
+
+        return response()->file(Storage::disk('local')->path($relPath), [
+            'Content-Type' => 'image/png',
+            'Cache-Control' => 'private, max-age=300',
+        ]);
     }
 
     /**

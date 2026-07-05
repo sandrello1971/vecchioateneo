@@ -63,6 +63,7 @@ Route::prefix('learn')->name('student.')->group(function () {
         Route::get('/classi/{class}/lezioni/{lesson}', [App\Http\Controllers\Student\StudentLessonController::class, 'show'])->name('classes.lesson.show');
         Route::get('/classi/{class}/lezioni/{lesson}/materiali/{document}/sorgente', [App\Http\Controllers\Student\StudentLessonController::class, 'materialSource'])->name('classes.lesson.material.source');
         Route::get('/classi/{class}/lezioni/{lesson}/presentazione', [App\Http\Controllers\Student\StudentLessonController::class, 'presentation'])->name('classes.lesson.presentation');
+        Route::get('/classi/{class}/lezioni/{lesson}/presentazione/slide/{n}', [App\Http\Controllers\Student\StudentLessonController::class, 'presentationSlide'])->whereNumber('n')->name('classes.lesson.presentation.slide');
         Route::get('/classi/{class}/lezioni/{lesson}/video', [App\Http\Controllers\Student\StudentLessonController::class, 'video'])->name('classes.lesson.video');
         Route::post('/classi/{class}/lezioni/{lesson}/video/cerca', [App\Http\Controllers\Student\StudentLessonController::class, 'videoSearch'])->name('classes.lesson.video.search')->middleware('throttle:minerva-chat');
 

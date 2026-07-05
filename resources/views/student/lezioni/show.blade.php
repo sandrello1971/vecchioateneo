@@ -17,6 +17,16 @@
         </div>
     </div>
 
+    {{-- P21 — slide della presentazione PUBBLICATA: visualizzatore inline (lightbox),
+         come nel flusso corsi. Il download .pptx resta nel pulsante in alto. --}}
+    @if($hasPresentation && ($presentationSlides ?? 0) > 0)
+        @php $presUrls = array_map(fn ($i) => route('student.classes.lesson.presentation.slide', [$class, $lesson, $i]), range(1, $presentationSlides)); @endphp
+        <div style="background:white; border:1px solid #C8D0D0; border-radius:10px; padding:16px 18px; margin-bottom:16px;">
+            <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">Slide della lezione</div>
+            <x-slide-lightbox :images="$presUrls" />
+        </div>
+    @endif
+
     {{-- V4 — video narrato della lezione (player); coesiste con le slide (download sopra).
          R4 — ricerca per-video: clic su un risultato → seek al punto. --}}
     @if(!empty($hasVideo))

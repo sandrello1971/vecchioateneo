@@ -143,18 +143,26 @@ class ModuleVideoController extends Controller
         $video = $this->currentVideo($module);
         abort_unless($video && $video->status === 'ready', 422, 'Genera prima il video.');
 
+        // Indicizzazione (ricerca in-video): best-effort, non blocca la pubblicazione.
+        $indexWarning = null;
         if (!$video->indexed_at || !$video->video_ai_id) {
             try {
                 $indexer->indexGenerated($video);
                 $video->refresh();
             } catch (\Throwable $e) {
-                return back()->with('error', 'Pubblicazione annullata: indicizzazione non riuscita (' . $e->getMessage() . '). Il video resta in bozza.');
+                \Log::warning('[schola] indicizzazione video modulo fallita, pubblico comunque', ['video' => $video->id, 'error' => $e->getMessage()]);
+                $indexWarning = $e->getMessage();
             }
         }
 
         $video->update(['published_at' => now()]);
 
-        return back()->with('success', 'Video pubblicato e indicizzato: visibile ai corsisti e ricercabile.');
+        return back()->with(
+            $indexWarning ? 'warning' : 'success',
+            $indexWarning
+                ? 'Video pubblicato: visibile ai corsisti. La ricerca dentro il video non è ancora disponibile (indicizzazione non riuscita: ' . $indexWarning . ').'
+                : 'Video pubblicato e indicizzato: visibile ai corsisti e ricercabile.'
+        );
     }
 
     /** V4 — ritira il video del modulo. */
