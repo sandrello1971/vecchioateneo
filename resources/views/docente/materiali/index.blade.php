@@ -5,6 +5,7 @@
 <div style="max-width:980px;">
     <div style="display:flex; align-items:center; gap:12px; margin-bottom:18px;">
         <h1 style="font-size:1.4rem; font-weight:700; color:#1A1F1F; flex:1;">Materiali</h1>
+        <a href="{{ route('docente.videos.index') }}" style="padding:9px 16px; background:white; color:#3A8C89; border:1px solid #3A8C89; border-radius:8px; font-size:0.85rem; font-weight:600; text-decoration:none;">🎥 Video con analisi visiva</a>
         <a href="{{ route('docente.materials.create') }}" style="padding:9px 16px; background:#55B1AE; color:white; border-radius:8px; font-size:0.85rem; font-weight:600; text-decoration:none;">+ Nuovo materiale</a>
     </div>
 

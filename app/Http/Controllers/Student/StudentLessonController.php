@@ -82,9 +82,14 @@ class StudentLessonController extends Controller
         $hasVideo = $publishedPresId && $lesson->videos()->where('presentation_id', $publishedPresId)
             ->where('status', 'ready')->whereNotNull('published_at')->exists();
 
+        // Video CARICATI dal docente e pubblicati sulla lezione (player + ricerca in-video).
+        $uploadedVideos = $lesson->uploadedVideos()
+            ->where('status', 'ready')->whereNotNull('published_at')
+            ->orderBy('created_at')->get();
+
         return view('student.lezioni.show', compact(
             'class', 'lesson', 'publication', 'bodyHtml', 'mediaMaterials', 'notes', 'teacherNotes',
-            'generated', 'usage', 'hasPresentation', 'hasVideo', 'presentationSlides'
+            'generated', 'usage', 'hasPresentation', 'hasVideo', 'presentationSlides', 'uploadedVideos'
         ));
     }
 
@@ -154,6 +159,40 @@ class StudentLessonController extends Controller
         abort_unless($video && $video->video_ai_id, 404);
 
         return response()->json(['matches' => $search->perVideo($video->video_ai_id, $q)]);
+    }
+
+    /** Gate + risoluzione di un video CARICATO pubblicato di questa lezione. */
+    private function publishedUploadedVideo(SchoolClass $class, Lesson $lesson, string $videoId): \App\Models\UploadedVideo
+    {
+        $student = $this->currentStudent();
+        $this->assertActiveEnrollment($class, $student->id);
+        $this->assertLessonPublished($lesson, $class);
+
+        $video = $lesson->uploadedVideos()->where('id', $videoId)
+            ->where('status', 'ready')->whereNotNull('published_at')->first();
+        abort_unless($video, 404);
+
+        return $video;
+    }
+
+    /** Stream mp4 locale di un video caricato pubblicato (Range/seek via BinaryFileResponse). */
+    public function uploadedVideo(SchoolClass $class, Lesson $lesson, string $video)
+    {
+        $uploaded = $this->publishedUploadedVideo($class, $lesson, $video);
+        abort_unless($uploaded->file_path && Storage::disk('local')->exists($uploaded->file_path), 404);
+
+        return response()->file(Storage::disk('local')->path($uploaded->file_path), ['Content-Type' => 'video/mp4']);
+    }
+
+    /** Ricerca PER-VIDEO in un video caricato pubblicato. Riuso VideoSearchService. */
+    public function uploadedVideoSearch(SchoolClass $class, Lesson $lesson, string $video, \Illuminate\Http\Request $request, \App\Services\Schola\VideoSearchService $search)
+    {
+        $uploaded = $this->publishedUploadedVideo($class, $lesson, $video);
+        $q = trim((string) $request->input('q', ''));
+        abort_if($q === '', 422, 'Inserisci una ricerca.');
+        abort_unless($uploaded->video_ai_id, 404);
+
+        return response()->json(['matches' => $search->perVideo($uploaded->video_ai_id, $q)]);
     }
 
     /**

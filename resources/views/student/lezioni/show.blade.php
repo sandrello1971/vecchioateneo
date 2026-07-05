@@ -79,6 +79,15 @@
         </script>
     @endif
 
+    {{-- Video CARICATI dal docente e pubblicati: player + ricerca in-video (parlato + immagini) --}}
+    @foreach(($uploadedVideos ?? []) as $uv)
+        <x-uploaded-video-player
+            :title="$uv->title"
+            :stream-url="route('student.classes.lesson.uploaded-video', [$class, $lesson, $uv])"
+            :search-url="route('student.classes.lesson.uploaded-video.search', [$class, $lesson, $uv])"
+            status="ready" />
+    @endforeach
+
     {{-- Materiali audio/video della lezione (ricerca video / player con seek) --}}
     @if($mediaMaterials->isNotEmpty())
     <div style="margin-top:16px; background:white; border:1px solid #C8D0D0; border-radius:10px; padding:14px 16px;">

@@ -75,6 +75,22 @@ class VideoAIService
         return $response->json();
     }
 
+    /**
+     * Schola — chunk testuali (parlato + descrizioni visive Vision) di un video
+     * caricato, per alimentare il RAG della Minerva. Ritorna la lista di chunk
+     * {text,type,start,timestamp_str}. Errore → lista vuota (best-effort).
+     * @return array<int, array{text: string, type: string, start: float, timestamp_str: string}>
+     */
+    public function getChunksText(string $videoId): array
+    {
+        $response = $this->client()->timeout(30)
+            ->get("{$this->baseUrl}/api/videos/{$videoId}/chunks_text");
+
+        if ($response->failed()) return [];
+
+        return (array) ($response->json('chunks') ?? []);
+    }
+
     public function getThumbnailUrl(string $videoId): string
     {
         return "{$this->baseUrl}/api/videos/{$videoId}/thumbnail";

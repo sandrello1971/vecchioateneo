@@ -66,6 +66,9 @@ Route::prefix('learn')->name('student.')->group(function () {
         Route::get('/classi/{class}/lezioni/{lesson}/presentazione/slide/{n}', [App\Http\Controllers\Student\StudentLessonController::class, 'presentationSlide'])->whereNumber('n')->name('classes.lesson.presentation.slide');
         Route::get('/classi/{class}/lezioni/{lesson}/video', [App\Http\Controllers\Student\StudentLessonController::class, 'video'])->name('classes.lesson.video');
         Route::post('/classi/{class}/lezioni/{lesson}/video/cerca', [App\Http\Controllers\Student\StudentLessonController::class, 'videoSearch'])->name('classes.lesson.video.search')->middleware('throttle:minerva-chat');
+        // Video CARICATI dal docente e pubblicati sulla lezione (stream locale + ricerca in-video)
+        Route::get('/classi/{class}/lezioni/{lesson}/video-caricati/{video}', [App\Http\Controllers\Student\StudentLessonController::class, 'uploadedVideo'])->name('classes.lesson.uploaded-video');
+        Route::post('/classi/{class}/lezioni/{lesson}/video-caricati/{video}/cerca', [App\Http\Controllers\Student\StudentLessonController::class, 'uploadedVideoSearch'])->name('classes.lesson.uploaded-video.search')->middleware('throttle:minerva-chat');
 
         // Messaggistica di classe (P22) — thread col docente + annunci (sola lettura)
         Route::get('/classi/{class}/messaggi', [App\Http\Controllers\Student\ClassMessageController::class, 'index'])->name('classi.messaggi.index');
@@ -302,6 +305,17 @@ Route::prefix('docente')->name('docente.')->middleware(['student.auth', 'profess
     Route::get('/lezioni/{lesson}/video/download', [App\Http\Controllers\Docente\LessonVideoController::class, 'downloadVideo'])->name('lessons.video.download');
     Route::post('/lezioni/{lesson}/video/pubblica', [App\Http\Controllers\Docente\LessonVideoController::class, 'publishVideo'])->name('lessons.video.publish');
     Route::post('/lezioni/{lesson}/video/ritira', [App\Http\Controllers\Docente\LessonVideoController::class, 'unpublishVideo'])->name('lessons.video.unpublish');
+
+    // Video CARICATI dal docente (analisi Vision videoai): upload da lezione o materiale,
+    // riproducibili + ricercabili al loro interno + nel RAG Minerva. Più video per lezione.
+    Route::post('/video-caricati', [App\Http\Controllers\Docente\UploadedVideoController::class, 'store'])->name('videos.store');
+    Route::get('/video-caricati', [App\Http\Controllers\Docente\UploadedVideoController::class, 'index'])->name('videos.index');
+    Route::get('/video-caricati/{video}/stato', [App\Http\Controllers\Docente\UploadedVideoController::class, 'status'])->name('videos.status');
+    Route::get('/video-caricati/{video}/stream', [App\Http\Controllers\Docente\UploadedVideoController::class, 'stream'])->name('videos.stream');
+    Route::post('/video-caricati/{video}/cerca', [App\Http\Controllers\Docente\UploadedVideoController::class, 'search'])->name('videos.search')->middleware('throttle:minerva-chat');
+    Route::post('/video-caricati/{video}/pubblica', [App\Http\Controllers\Docente\UploadedVideoController::class, 'publish'])->name('videos.publish');
+    Route::post('/video-caricati/{video}/ritira', [App\Http\Controllers\Docente\UploadedVideoController::class, 'unpublish'])->name('videos.unpublish');
+    Route::delete('/video-caricati/{video}', [App\Http\Controllers\Docente\UploadedVideoController::class, 'destroy'])->name('videos.destroy');
 
     // Pubblicazione lezione su classe (P20a) — cattedra/proprietà + ingestion RAG asincrona
     Route::post('/lezioni/{lesson}/pubblica', [App\Http\Controllers\Docente\LessonPublicationController::class, 'store'])->name('lessons.publish');

@@ -66,4 +66,10 @@ class Lesson extends Model
     {
         return $this->hasMany(LessonVideo::class);
     }
+
+    // Video CARICATI dal docente (analisi Vision videoai). Una lezione può averne molti.
+    public function uploadedVideos()
+    {
+        return $this->hasMany(UploadedVideo::class);
+    }
 }
