@@ -27,10 +27,10 @@
         <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">Materiali della lezione ({{ $materials->count() }})</div>
         @forelse($materials as $m)
             @php $mb = ['pending'=>['#8A9696','in coda'],'processing'=>['#E28A53','in elaborazione'],'ready'=>['#3A8C89','pronto'],'failed'=>['#A8521F','fallito']]; [$c,$l]=$mb[$m->status]??['#8A9696',$m->status]; @endphp
-            <div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-top:1px solid #F0F2F2; font-size:0.82rem;">
+            <div x-data="materialRow('{{ $m->id }}', '{{ $m->status }}')" style="display:flex; align-items:center; gap:8px; padding:6px 0; border-top:1px solid #F0F2F2; font-size:0.82rem;">
                 <span style="color:#3A8C89;">&#128196;</span>
                 <a href="{{ route('docente.materials.show', $m) }}" style="flex:1; color:#1A1F1F; text-decoration:none;">{{ $m->title }} <span style="color:#8A9696;">· {{ $m->source_type }}</span></a>
-                <span style="font-size:0.7rem; font-weight:700; color:{{ $c }}; border:1px solid {{ $c }}; border-radius:4px; padding:1px 8px;">{{ $l }}</span>
+                <span x-text="label()" :style="`font-size:0.7rem; font-weight:700; color:${color()}; border:1px solid ${color()}; border-radius:4px; padding:1px 8px;`" style="font-size:0.7rem; font-weight:700; color:{{ $c }}; border:1px solid {{ $c }}; border-radius:4px; padding:1px 8px;">{{ $l }}</span>
             </div>
         @empty
             <p style="color:#8A9696; font-size:0.85rem;">Nessun materiale assegnato. Caricane uno qui sotto oppure vai all'<a href="{{ route('docente.topics.show', $lesson->topic_id) }}" style="color:#55B1AE;">argomento</a> per classificare il pool.</p>
@@ -462,6 +462,31 @@
 @endPushOnce
 @push('scripts')
 <script>
+// Riga materiale: se "in coda"/"in elaborazione", il polling aggiorna il badge da
+// solo e, a estrazione finita, ricarica (per abilitare "Componi lezione").
+function materialRow(id, initial) {
+    const MAP = {pending:['#8A9696','in coda'],processing:['#E28A53','in elaborazione'],ready:['#3A8C89','pronto'],failed:['#A8521F','fallito']};
+    return {
+        status: initial,
+        label() { return (MAP[this.status] || ['#8A9696', this.status])[1]; },
+        color() { return (MAP[this.status] || ['#8A9696'])[0]; },
+        init() { if (this.status === 'pending' || this.status === 'processing') this.poll(); },
+        poll() {
+            const timer = setInterval(async () => {
+                try {
+                    const r = await fetch(`/docente/materiali/${id}/stato`, {headers: {'X-Requested-With':'XMLHttpRequest'}});
+                    const d = await r.json();
+                    this.status = d.status;
+                    if (d.status === 'ready' || d.status === 'failed') {
+                        clearInterval(timer);
+                        window.location.reload(); // ricalcola "Componi lezione"
+                    }
+                } catch (e) {}
+            }, 4000);
+        },
+    };
+}
+
 function lessonStatus(id, initial) {
     return {
         status: initial,
