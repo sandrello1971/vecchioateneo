@@ -213,6 +213,11 @@ Route::prefix('docente')->name('docente.')->middleware(['student.auth', 'profess
     Route::patch('/classi/{class}', [App\Http\Controllers\Docente\ClassController::class, 'update'])->name('classes.update');
 
     // Messaggistica di classe (P22) — thread studente↔docente + annunci (cattedra)
+    // Casella "Messaggi" del docente: tutti i thread di tutte le classi + compositore.
+    Route::get('/messaggi', [App\Http\Controllers\Docente\MessageInboxController::class, 'index'])->name('messages.index');
+    Route::get('/messaggi/nuovo', [App\Http\Controllers\Docente\MessageInboxController::class, 'create'])->name('messages.create');
+    Route::post('/messaggi', [App\Http\Controllers\Docente\MessageInboxController::class, 'store'])->name('messages.store');
+
     Route::get('/classi/{class}/messaggi', [App\Http\Controllers\Docente\ClassMessageController::class, 'index'])->name('classi.messaggi.index');
     Route::get('/classi/{class}/messaggi/nuovo', [App\Http\Controllers\Docente\ClassMessageController::class, 'create'])->name('classi.messaggi.create');
     Route::post('/classi/{class}/messaggi', [App\Http\Controllers\Docente\ClassMessageController::class, 'store'])->name('classi.messaggi.store');

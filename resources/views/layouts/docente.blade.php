@@ -75,6 +75,20 @@
            class="nav-item {{ request()->routeIs('docente.biblioteca.*') || request()->routeIs('docente.materials.shared.*') ? 'active' : '' }}">
             <span>&#127963;</span> Biblioteca
         </a>
+        @php
+            // Messaggi non letti del docente (thread di tutte le sue classi).
+            $docenteUnread = (int) \App\Models\ClassMessage::whereNull('read_at')
+                ->where('sender_id', '!=', session('student_id'))
+                ->whereHas('conversation', fn ($q) => $q->where('teacher_id', session('student_id')))
+                ->count();
+        @endphp
+        <a href="{{ route('docente.messages.index') }}"
+           class="nav-item {{ request()->routeIs('docente.messages.*') ? 'active' : '' }}" style="justify-content:flex-start;">
+            <span>&#9993;</span> Messaggi
+            @if($docenteUnread > 0)
+                <span style="margin-left:auto; font-size:0.66rem; font-weight:700; color:#fff; background:#E28A53; border-radius:10px; padding:2px 8px;">{{ $docenteUnread }}</span>
+            @endif
+        </a>
         <a href="#" x-data @click.prevent="$dispatch('minerva-toggle')" class="nav-item"><span>&#10022;</span> Assistente AI</a>
     </nav>
     </div>{{-- /.sidebar-scroll --}}
