@@ -71,18 +71,25 @@ class StudentLessonController extends Controller
 
         // Presentazione .pptx pronta (P21): scaricabile, mai generabile dallo studente.
         // Solo la versione PUBBLICATA è visibile: le bozze del formatore restano nascoste.
-        $publishedPresId = $lesson->presentations()->where('status', 'ready')
-            ->whereNotNull('published_at')->latest('published_at')->value('id');
-        $hasPresentation = $publishedPresId !== null;
+        $publishedPres = $lesson->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->first();
+        $publishedPresId = $publishedPres?->id;
+        $hasPresentation = $publishedPres !== null;
+        $presentationSlides = (int) ($publishedPres->generation_meta['slides'] ?? 0);
 
         // V4 — video pubblicato, SOLO se legato alla presentazione pubblicata corrente
         // (un video da una presentazione ritirata/cambiata non resta esposto).
         $hasVideo = $publishedPresId && $lesson->videos()->where('presentation_id', $publishedPresId)
             ->where('status', 'ready')->whereNotNull('published_at')->exists();
 
+        // Video CARICATI dal docente e pubblicati sulla lezione (player + ricerca in-video).
+        $uploadedVideos = $lesson->uploadedVideos()
+            ->where('status', 'ready')->whereNotNull('published_at')
+            ->orderBy('created_at')->get();
+
         return view('student.lezioni.show', compact(
             'class', 'lesson', 'publication', 'bodyHtml', 'mediaMaterials', 'notes', 'teacherNotes',
-            'generated', 'usage', 'hasPresentation', 'hasVideo'
+            'generated', 'usage', 'hasPresentation', 'hasVideo', 'presentationSlides', 'uploadedVideos'
         ));
     }
 
@@ -109,6 +116,31 @@ class StudentLessonController extends Controller
     }
 
     /**
+     * P21 — immagine PNG della n-esima slide della presentazione PUBBLICATA, per il
+     * visualizzatore (lightbox) dello studente. Stesso gate: iscrizione attiva +
+     * lezione pubblicata. Le bozze del docente restano nascoste.
+     */
+    public function presentationSlide(SchoolClass $class, Lesson $lesson, int $n, \App\Services\Schola\SlidePreviewService $preview)
+    {
+        $student = $this->currentStudent();
+        $this->assertActiveEnrollment($class, $student->id);
+        $this->assertLessonPublished($lesson, $class);
+
+        $presentation = $lesson->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->first();
+        abort_unless($presentation && $presentation->file_path
+            && Storage::disk('local')->exists($presentation->file_path), 404);
+
+        $images = $preview->imagesFor($presentation->file_path);
+        $relPath = $images[$n - 1] ?? abort(404);
+
+        return response()->file(Storage::disk('local')->path($relPath), [
+            'Content-Type' => 'image/png',
+            'Cache-Control' => 'private, max-age=300',
+        ]);
+    }
+
+    /**
      * R4 — ricerca PER-VIDEO nel video pubblicato della lezione. Stesso gate del video
      * (iscrizione attiva + lezione pubblicata). Proxy a videoai sul video_ai_id del video.
      */
@@ -127,6 +159,69 @@ class StudentLessonController extends Controller
         abort_unless($video && $video->video_ai_id, 404);
 
         return response()->json(['matches' => $search->perVideo($video->video_ai_id, $q)]);
+    }
+
+    /** Gate + risoluzione di un video CARICATO pubblicato di questa lezione. */
+    private function publishedUploadedVideo(SchoolClass $class, Lesson $lesson, string $videoId): \App\Models\UploadedVideo
+    {
+        $student = $this->currentStudent();
+        $this->assertActiveEnrollment($class, $student->id);
+        $this->assertLessonPublished($lesson, $class);
+
+        $video = $lesson->uploadedVideos()->where('id', $videoId)
+            ->where('status', 'ready')->whereNotNull('published_at')->first();
+        abort_unless($video, 404);
+
+        return $video;
+    }
+
+    /** Stream mp4 locale di un video caricato pubblicato (Range/seek via BinaryFileResponse). */
+    public function uploadedVideo(SchoolClass $class, Lesson $lesson, string $video)
+    {
+        $uploaded = $this->publishedUploadedVideo($class, $lesson, $video);
+        abort_unless($uploaded->file_path && Storage::disk('local')->exists($uploaded->file_path), 404);
+
+        return response()->file(Storage::disk('local')->path($uploaded->file_path), ['Content-Type' => 'video/mp4']);
+    }
+
+    /** Ricerca PER-VIDEO in un video caricato pubblicato. Riuso VideoSearchService. */
+    public function uploadedVideoSearch(SchoolClass $class, Lesson $lesson, string $video, \Illuminate\Http\Request $request, \App\Services\Schola\VideoSearchService $search)
+    {
+        $uploaded = $this->publishedUploadedVideo($class, $lesson, $video);
+        $q = trim((string) $request->input('q', ''));
+        abort_if($q === '', 422, 'Inserisci una ricerca.');
+        abort_unless($uploaded->video_ai_id, 404);
+
+        return response()->json(['matches' => $search->perVideo($uploaded->video_ai_id, $q)]);
+    }
+
+    /** "Chiedi al video" su un video caricato pubblicato: Q&A grounded. */
+    public function uploadedVideoAsk(SchoolClass $class, Lesson $lesson, string $video, \Illuminate\Http\Request $request, \App\Services\VideoAIService $ai)
+    {
+        $uploaded = $this->publishedUploadedVideo($class, $lesson, $video);
+        $q = trim((string) $request->input('question', ''));
+        abort_if($q === '', 422, 'Scrivi una domanda.');
+        abort_unless($uploaded->video_ai_id, 404);
+
+        return response()->json($ai->askVideo($uploaded->video_ai_id, $q, (array) $request->input('history', [])));
+    }
+
+    /** "Chiedi al video" sul video narrato (generato) pubblicato della lezione. */
+    public function videoAsk(SchoolClass $class, Lesson $lesson, \Illuminate\Http\Request $request, \App\Services\VideoAIService $ai)
+    {
+        $student = $this->currentStudent();
+        $this->assertActiveEnrollment($class, $student->id);
+        $this->assertLessonPublished($lesson, $class);
+        $q = trim((string) $request->input('question', ''));
+        abort_if($q === '', 422, 'Scrivi una domanda.');
+
+        $publishedPresId = $lesson->presentations()->where('status', 'ready')
+            ->whereNotNull('published_at')->latest('published_at')->value('id');
+        $video = $publishedPresId ? $lesson->videos()->where('presentation_id', $publishedPresId)
+            ->where('status', 'ready')->whereNotNull('published_at')->latest('published_at')->first() : null;
+        abort_unless($video && $video->video_ai_id, 404);
+
+        return response()->json($ai->askVideo($video->video_ai_id, $q, (array) $request->input('history', [])));
     }
 
     /**

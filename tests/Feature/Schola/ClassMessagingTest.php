@@ -237,7 +237,104 @@ class ClassMessagingTest extends TestCase
 
         // Un docente non può messaggiare la segreteria (non è studente attivo della classe).
         $this->asProf($prof)->post(route('docente.classi.messaggi.store', $schoolClass), [
-            'student_id' => $secretary->id, 'subject' => 'Oggetto', 'body' => 'testo',
+            'recipient' => $secretary->id, 'subject' => 'Oggetto', 'body' => 'testo',
+        ])->assertForbidden();
+    }
+
+    // ===== Broadcast docente → tutta la classe + casella globale =====
+
+    public function test_teacher_broadcast_creates_private_thread_per_student(): void
+    {
+        Notification::fake();
+        $prof = $this->prof();
+        $class = $this->freeClass($prof);
+        $s1 = $this->student(); $s2 = $this->student(); $s3 = $this->student();
+        $this->enroll($class, $s1);
+        $this->enroll($class, $s2);
+        $this->enroll($class, $s3, 'pending'); // NON attivo → escluso
+
+        $this->asProf($prof)->post(route('docente.classi.messaggi.store', $class), [
+            'recipient' => 'all', 'subject' => 'Avviso', 'body' => 'Domani interrogazioni.',
+        ])->assertRedirect(route('docente.classi.messaggi.index', $class));
+
+        // Un thread PRIVATO per ciascuno studente ATTIVO (2), non 3.
+        $this->assertSame(2, ClassConversation::where('school_class_id', $class->id)->count());
+        $this->assertSame(2, ClassMessage::count());
+        // Ogni studente attivo ha il proprio thread; il non-attivo no.
+        $this->assertDatabaseHas('class_conversations', ['student_id' => $s1->id, 'teacher_id' => $prof->id]);
+        $this->assertDatabaseHas('class_conversations', ['student_id' => $s2->id, 'teacher_id' => $prof->id]);
+        $this->assertDatabaseMissing('class_conversations', ['student_id' => $s3->id]);
+        Notification::assertSentTo($s1, ClassConversationCreatedNotification::class);
+        Notification::assertSentTo($s2, ClassConversationCreatedNotification::class);
+    }
+
+    public function test_broadcast_reuses_existing_thread_no_duplicate(): void
+    {
+        Notification::fake();
+        $prof = $this->prof();
+        $class = $this->freeClass($prof);
+        $student = $this->student();
+        $this->enroll($class, $student);
+
+        // Thread già esistente (aperto dallo studente).
+        $this->asUser($student)->post(route('student.classi.messaggi.store', $class), [
+            'teacher_id' => $prof->id, 'subject' => 'Domanda', 'body' => 'ciao',
+        ]);
+        // Broadcast: riusa il thread, non ne crea un secondo.
+        $this->asProf($prof)->post(route('docente.classi.messaggi.store', $class), [
+            'recipient' => 'all', 'subject' => 'Avviso', 'body' => 'a tutti',
+        ]);
+
+        $this->assertSame(1, ClassConversation::where('student_id', $student->id)->count());
+        $this->assertSame(2, ClassMessage::count());
+    }
+
+    public function test_global_inbox_lists_threads_across_classes(): void
+    {
+        Notification::fake();
+        $prof = $this->prof();
+        $classA = $this->freeClass($prof);
+        $classB = SchoolClass::create(['school_id' => null, 'teacher_id' => $prof->id, 'name' => '4B',
+            'subject_id' => $this->storia->id, 'school_year' => '2026/2027',
+            'invite_code' => SchoolClass::generateInviteCode(), 'invite_enabled' => true,
+            'requires_approval' => false, 'is_archived' => false]);
+        $sA = $this->student(); $sB = $this->student();
+        $this->enroll($classA, $sA);
+        $this->enroll($classB, $sB);
+
+        $this->asProf($prof)->post(route('docente.classi.messaggi.store', $classA), ['recipient' => $sA->id, 'subject' => 'Msg A', 'body' => 'msg A']);
+        $this->asProf($prof)->post(route('docente.classi.messaggi.store', $classB), ['recipient' => $sB->id, 'subject' => 'Msg B', 'body' => 'msg B']);
+
+        $res = $this->asProf($prof)->get(route('docente.messages.index'));
+        $res->assertOk()->assertSee('3A')->assertSee('4B')->assertSee($sA->name)->assertSee($sB->name);
+    }
+
+    public function test_global_store_broadcasts_to_selected_class(): void
+    {
+        Notification::fake();
+        $prof = $this->prof();
+        $class = $this->freeClass($prof);
+        $s1 = $this->student(); $s2 = $this->student();
+        $this->enroll($class, $s1);
+        $this->enroll($class, $s2);
+
+        $this->asProf($prof)->post(route('docente.messages.store'), [
+            'school_class_id' => $class->id, 'recipient' => 'all', 'subject' => 'Tutti', 'body' => 'ciao a tutti',
+        ])->assertRedirect(route('docente.messages.index'));
+
+        $this->assertSame(2, ClassConversation::where('teacher_id', $prof->id)->count());
+    }
+
+    public function test_global_store_rejects_class_without_cattedra(): void
+    {
+        $prof = $this->prof();
+        $other = $this->prof();
+        $class = $this->freeClass($other); // non del docente $prof
+        $student = $this->student();
+        $this->enroll($class, $student);
+
+        $this->asProf($prof)->post(route('docente.messages.store'), [
+            'school_class_id' => $class->id, 'recipient' => 'all', 'subject' => 'Prova', 'body' => 'testo',
         ])->assertForbidden();
     }
 

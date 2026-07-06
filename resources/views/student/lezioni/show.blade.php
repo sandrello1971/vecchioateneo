@@ -17,57 +17,36 @@
         </div>
     </div>
 
-    {{-- V4 — video narrato della lezione (player); coesiste con le slide (download sopra).
-         R4 — ricerca per-video: clic su un risultato → seek al punto. --}}
-    @if(!empty($hasVideo))
-        <div style="background:white; border:1px solid #C8D0D0; border-radius:10px; padding:16px 18px; margin-bottom:16px;"
-             x-data="videoSearch('{{ route('student.classes.lesson.video.search', [$class, $lesson]) }}')">
-            <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">🎬 Video della lezione</div>
-            <video x-ref="player" controls preload="metadata" style="width:100%; max-width:880px; border-radius:8px; background:#0A0A0A; aspect-ratio:16/9;"
-                   src="{{ route('student.classes.lesson.video', [$class, $lesson]) }}"></video>
-
-            <form @submit.prevent="run()" style="margin-top:12px; display:flex; gap:6px; max-width:880px;">
-                <input x-model="q" type="text" placeholder="Cerca in questo video (parlato e schermo)…"
-                       style="flex:1; padding:8px 10px; border:1px solid #C8D0D0; border-radius:8px; font-size:0.85rem;">
-                <button style="padding:8px 16px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">Cerca</button>
-            </form>
-            <p x-show="loading" style="margin-top:8px; font-size:0.82rem; color:#8A9696;">Ricerca…</p>
-            <p x-show="done && !results.length" style="margin-top:8px; font-size:0.82rem; color:#8A9696;">Nessun riscontro in questo video.</p>
-            <ul x-show="results.length" style="margin-top:8px; list-style:none; padding:0; max-width:880px; display:flex; flex-direction:column; gap:4px;">
-                <template x-for="m in results" :key="m.start + '_' + m.text.slice(0,12)">
-                    <li @click="seek(m.start)" style="cursor:pointer; padding:7px 10px; background:#F4F6F6; border-radius:7px; font-size:0.82rem; color:#4A5252;">
-                        <span style="font-weight:700; color:#3A8C89;" x-text="fmt(m.start)"></span>
-                        <span style="font-size:0.68rem; color:#8A9696;" x-text="m.type === 'frame' ? ' schermo' : ' parlato'"></span>
-                        — <span x-text="m.text"></span>
-                    </li>
-                </template>
-            </ul>
+    {{-- P21 — slide della presentazione PUBBLICATA: visualizzatore inline (lightbox),
+         come nel flusso corsi. Il download .pptx resta nel pulsante in alto. --}}
+    @if($hasPresentation && ($presentationSlides ?? 0) > 0)
+        @php $presUrls = array_map(fn ($i) => route('student.classes.lesson.presentation.slide', [$class, $lesson, $i]), range(1, $presentationSlides)); @endphp
+        <div style="background:white; border:1px solid #C8D0D0; border-radius:10px; padding:16px 18px; margin-bottom:16px;">
+            <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">Slide della lezione</div>
+            <x-slide-lightbox :images="$presUrls" />
         </div>
-        <script>
-            function videoSearch(url) {
-                return {
-                    url, q: '', results: [], loading: false, done: false,
-                    async run() {
-                        if (!this.q.trim()) return;
-                        this.loading = true; this.done = false; this.results = [];
-                        try {
-                            const r = await fetch(this.url, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json',
-                                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content },
-                                body: JSON.stringify({ q: this.q }),
-                            });
-                            const j = await r.json();
-                            this.results = j.matches || [];
-                        } catch (e) { this.results = []; }
-                        this.loading = false; this.done = true;
-                    },
-                    seek(s) { this.$refs.player.currentTime = s; this.$refs.player.play(); this.$refs.player.scrollIntoView({ behavior: 'smooth', block: 'center' }); },
-                    fmt(s) { const m = Math.floor(s / 60), sec = Math.floor(s % 60); return m + ':' + String(sec).padStart(2, '0'); },
-                };
-            }
-        </script>
     @endif
+
+    {{-- V4 — video narrato della lezione: player + "Cerca" (passaggi) e "Chiedi al video"
+         (Q&A grounded). Componente condiviso coi video caricati. --}}
+    @if(!empty($hasVideo))
+        <x-uploaded-video-player
+            title="Video della lezione"
+            :stream-url="route('student.classes.lesson.video', [$class, $lesson])"
+            :search-url="route('student.classes.lesson.video.search', [$class, $lesson])"
+            :ask-url="route('student.classes.lesson.video.ask', [$class, $lesson])"
+            status="ready" />
+    @endif
+
+    {{-- Video CARICATI dal docente e pubblicati: player + ricerca in-video (parlato + immagini) --}}
+    @foreach(($uploadedVideos ?? []) as $uv)
+        <x-uploaded-video-player
+            :title="$uv->title"
+            :stream-url="route('student.classes.lesson.uploaded-video', [$class, $lesson, $uv])"
+            :search-url="route('student.classes.lesson.uploaded-video.search', [$class, $lesson, $uv])"
+            :ask-url="route('student.classes.lesson.uploaded-video.ask', [$class, $lesson, $uv])"
+            status="ready" />
+    @endforeach
 
     {{-- Materiali audio/video della lezione (ricerca video / player con seek) --}}
     @if($mediaMaterials->isNotEmpty())

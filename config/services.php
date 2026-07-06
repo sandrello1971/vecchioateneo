@@ -53,7 +53,7 @@ return [
         'keyframe_fps' => (float) env('VIDEOAI_KEYFRAME_FPS', 0.2),
         // R5 — tipi sorgente Schola che passano da sub-processori esterni
         // (audio/video→Whisper, foto→Vision): richiedono il consenso DPA della scuola.
-        'dpa_required_source_types' => ['audio', 'youtube', 'photos'],
+        'dpa_required_source_types' => ['audio', 'youtube', 'photos', 'video'],
     ],
 
     // Embedding per il RAG vettoriale Schola (pre-pacchetto 6). Il servizio è

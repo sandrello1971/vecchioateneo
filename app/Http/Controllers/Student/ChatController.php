@@ -128,6 +128,9 @@ class ChatController extends Controller
             }
         }
 
+        // Grounding stretto: la garanzia "niente conoscenza generale" è cablata nel
+        // system prompt (buildMinervaSystemPrompt). Con contesto vuoto + prompt rigido
+        // il modello risponde "non è nei tuoi materiali" invece di inventare.
         $reply = $this->callClaudeForMinerva($data['question'], $data['history'] ?? [], $context, $courseNames, $mode, $isInstructor);
 
         return response()->json([
@@ -194,9 +197,11 @@ class ChatController extends Controller
 
 Regole:
 - Rispondi in italiano
+- Rispondi ESCLUSIVAMENTE in base ai materiali forniti nel CONTESTO qui sotto. NON integrare con la tua conoscenza generale né con informazioni esterne al contesto.
+- Se il contesto copre solo in parte la domanda, rispondi su ciò che è coperto e dichiara esplicitamente cosa manca.
+- Non inventare. Se l'informazione NON è nei materiali forniti, dillo chiaramente e invita a rivolgersi al docente: NON rispondere dalla tua conoscenza generale.
 - Se citi un video con timestamp, formatta come [MM:SS] — lo studente può cliccarci
 - Se citi un documento, cita il titolo
-- Non inventare. Se l'informazione non è nei materiali forniti, dillo onestamente e usa il tuo buon senso generale
 - Sii diretto, chiaro, incoraggiante
 
 {$context}
@@ -576,6 +581,54 @@ TXT;
             'tokens_used' => $reply['tokens'] ?? null,
             'context_documents' => $sources,
         ]);
+
+        return response()->json([
+            'answer' => $reply['content'],
+            'sources' => $sources,
+            'tokens' => $reply['tokens'] ?? null,
+            'gate' => 'answered',
+        ]);
+    }
+
+    /**
+     * Minerva "school-wide" del docente (chatbot floating dell'area insegnanti):
+     * risponde su TUTTA la sua documentazione scolastica — i propri materiali
+     * (teacher_private), la Biblioteca di scuola (teacher_shared: admin + condivisi
+     * scuola/materia) e il pubblicato delle classi che INSEGNA (cattedre + classi
+     * possedute). Esclude classi non insegnate e le bozze private di altri docenti.
+     * Risposta con FONTI citate. Nessun filtro materia (connect=true).
+     */
+    public function teacherSchoolAsk(Request $request)
+    {
+        $student = Student::find(session('student_id'));
+        abort_unless($student && $student->isProfessor(), 403);
+
+        $data = $request->validate([
+            'question' => 'required|string|max:4000',
+            'history' => 'nullable|array',
+            'history.*.role' => 'required_with:history|in:user,assistant',
+            'history.*.content' => 'required_with:history|string',
+        ]);
+
+        // Classi del docente: cattedre (regime scuola) + classi possedute (regime libero).
+        $classIds = \App\Models\TeachingAssignment::where('teacher_id', $student->id)
+            ->pluck('school_class_id')
+            ->merge(SchoolClass::where('teacher_id', $student->id)->pluck('id'))
+            ->filter()->unique()->values()->all();
+
+        $result = $this->rag->searchClassScopedScored($data['question'], $classIds, $student->id, 6, null, null, null, true);
+
+        // GATE §5: nessun materiale pertinente → non si chiama il modello.
+        if ($result['docs']->isEmpty()) {
+            return response()->json([
+                'answer' => 'Non trovo questo nella documentazione della tua scuola. Prova con altre parole, oppure carica/condividi un materiale che copra questo argomento.',
+                'sources' => [],
+                'gate' => 'empty',
+            ]);
+        }
+
+        [$context, $sources] = $this->buildClassContextAndSources($result['docs'], true);
+        $reply = $this->callClaudeForClass($data['question'], $data['history'] ?? [], $context, true);
 
         return response()->json([
             'answer' => $reply['content'],

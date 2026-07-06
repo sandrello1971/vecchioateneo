@@ -74,16 +74,26 @@ class ClassMessageController extends Controller
         $this->authorizeClass($class, $teacher);
 
         $data = $request->validate([
-            'student_id' => 'required|uuid',
+            // 'all' = broadcast a tutta la classe; altrimenti l'id di un singolo studente.
+            'recipient' => 'required|string',
             'subject' => 'required|string|min:3|max:200',
             'body' => 'required|string|min:1|max:5000',
         ]);
 
-        abort_unless($this->access->studentActive($class, $data['student_id']), 403,
+        // Broadcast a tutta la classe → thread privati 1:1 per ogni studente.
+        if ($data['recipient'] === 'all') {
+            $count = $this->access->broadcastThread($class, $teacher, $data['subject'], $data['body']);
+            abort_if($count === 0, 422, 'Nessuno studente attivo in questa classe.');
+
+            return redirect()->route('docente.classi.messaggi.index', $class)
+                ->with('success', "Messaggio inviato a {$count} studenti (ognuno in un thread privato).");
+        }
+
+        abort_unless($this->access->studentActive($class, $data['recipient']), 403,
             'Lo studente non è iscritto attivo in questa classe.');
 
         [$conversation, $message, $isNew] = $this->access->openThread(
-            $class, $data['student_id'], $teacher->id, $teacher, $data['subject'], $data['body']
+            $class, $data['recipient'], $teacher->id, $teacher, $data['subject'], $data['body']
         );
 
         if ($isNew) {

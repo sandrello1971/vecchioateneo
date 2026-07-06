@@ -27,10 +27,10 @@
         <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px;">Materiali della lezione ({{ $materials->count() }})</div>
         @forelse($materials as $m)
             @php $mb = ['pending'=>['#8A9696','in coda'],'processing'=>['#E28A53','in elaborazione'],'ready'=>['#3A8C89','pronto'],'failed'=>['#A8521F','fallito']]; [$c,$l]=$mb[$m->status]??['#8A9696',$m->status]; @endphp
-            <div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-top:1px solid #F0F2F2; font-size:0.82rem;">
+            <div x-data="materialRow('{{ $m->id }}', '{{ $m->status }}')" style="display:flex; align-items:center; gap:8px; padding:6px 0; border-top:1px solid #F0F2F2; font-size:0.82rem;">
                 <span style="color:#3A8C89;">&#128196;</span>
                 <a href="{{ route('docente.materials.show', $m) }}" style="flex:1; color:#1A1F1F; text-decoration:none;">{{ $m->title }} <span style="color:#8A9696;">· {{ $m->source_type }}</span></a>
-                <span style="font-size:0.7rem; font-weight:700; color:{{ $c }}; border:1px solid {{ $c }}; border-radius:4px; padding:1px 8px;">{{ $l }}</span>
+                <span x-text="label()" :style="`font-size:0.7rem; font-weight:700; color:${color()}; border:1px solid ${color()}; border-radius:4px; padding:1px 8px;`" style="font-size:0.7rem; font-weight:700; color:{{ $c }}; border:1px solid {{ $c }}; border-radius:4px; padding:1px 8px;">{{ $l }}</span>
             </div>
         @empty
             <p style="color:#8A9696; font-size:0.85rem;">Nessun materiale assegnato. Caricane uno qui sotto oppure vai all'<a href="{{ route('docente.topics.show', $lesson->topic_id) }}" style="color:#55B1AE;">argomento</a> per classificare il pool.</p>
@@ -280,6 +280,64 @@
     </div>
     @endif
 
+    {{-- Video CARICATI dal docente (analisi Vision): riproducibili + ricercabili + in Minerva.
+         Più video per lezione, pubblicabili indipendentemente. --}}
+    <div style="background:white; border:1px solid #C8D0D0; border-radius:10px; padding:16px 18px; margin-bottom:16px;">
+        <div style="font-size:0.75rem; font-weight:700; color:#4A5252; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:12px;">Video caricati (analisi immagini + ricerca)</div>
+
+        @forelse($lesson->uploadedVideos()->orderBy('created_at')->get() as $uv)
+            <div style="border:1px solid #E4E9E9; border-radius:9px; padding:12px 14px; margin-bottom:10px;"
+                 x-data="{ s: '{{ $uv->status }}' }"
+                 x-init="if (s === 'processing') { const t = setInterval(async () => { const r = await fetch('{{ route('docente.videos.status', $uv) }}'); const j = await r.json(); if (j.status !== 'processing') { clearInterval(t); location.reload(); } }, 5000); }">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                    <span style="flex:1; font-size:0.9rem; font-weight:600; color:#1A1F1F;">{{ $uv->title }}</span>
+                    @php $vb = ['processing'=>['#E28A53','analisi…'],'ready'=>['#3A8C89','pronto'],'failed'=>['#A8521F','fallito'],'pending'=>['#8A9696','in coda']]; [$vc,$vl]=$vb[$uv->status]??['#8A9696',$uv->status]; @endphp
+                    <span style="display:inline-block; padding:2px 9px; background:{{ $vc }}22; color:{{ $vc }}; border-radius:6px; font-size:0.72rem; font-weight:700;">{{ $vl }}</span>
+                    @if($uv->isPublished())<span style="display:inline-block; padding:2px 9px; background:#3A8C8922; color:#3A8C89; border-radius:6px; font-size:0.72rem; font-weight:700;">pubblicato</span>@endif
+                </div>
+
+                @if($uv->status === 'ready')
+                    <x-uploaded-video-player
+                        :title="$uv->title"
+                        :stream-url="route('docente.videos.stream', $uv)"
+                        :search-url="route('docente.videos.search', $uv)"
+                        :ask-url="route('docente.videos.ask', $uv)"
+                        status="ready" />
+                @elseif($uv->status === 'failed')
+                    <p style="font-size:0.82rem; color:#A8521F;">&#10007; Analisi non riuscita{{ $uv->failure_reason ? ': ' . $uv->failure_reason : '' }}.</p>
+                @else
+                    <p style="font-size:0.82rem; color:#8A9696;">Analisi in corso (trascrizione + immagini)… la pagina si aggiorna da sola.</p>
+                @endif
+
+                <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+                    @if($uv->status === 'ready' && !$uv->isPublished())
+                        <form method="POST" action="{{ route('docente.videos.publish', $uv) }}">
+                            @csrf<button style="padding:6px 13px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.8rem; font-weight:600; cursor:pointer;">Pubblica agli studenti</button>
+                        </form>
+                    @elseif($uv->isPublished())
+                        <form method="POST" action="{{ route('docente.videos.unpublish', $uv) }}">
+                            @csrf<button style="padding:6px 13px; background:white; color:#A8521F; border:1px solid #A8521F; border-radius:8px; font-size:0.8rem; font-weight:600; cursor:pointer;">Ritira</button>
+                        </form>
+                    @endif
+                    <form method="POST" action="{{ route('docente.videos.destroy', $uv) }}" onsubmit="return confirm('Eliminare questo video?')">
+                        @csrf @method('DELETE')<button style="padding:6px 13px; background:white; color:#8A9696; border:1px solid #C8D0D0; border-radius:8px; font-size:0.8rem; cursor:pointer;">Elimina</button>
+                    </form>
+                </div>
+            </div>
+        @empty
+            <p style="color:#8A9696; font-size:0.84rem; margin-bottom:12px;">Nessun video caricato. Carica un tuo video: verrà analizzato anche nelle immagini (diagrammi, icone, testo a schermo), reso ricercabile al suo interno e disponibile alla Minerva.</p>
+        @endforelse
+
+        <div x-data="{ open: false }" style="margin-top:6px;">
+            <button @click="open = !open" style="padding:8px 16px; background:#F4F6F6; color:#4A5252; border:1px solid #C8D0D0; border-radius:8px; font-size:0.82rem; font-weight:600; cursor:pointer;">
+                <span x-show="!open">&#43; Carica un video</span><span x-show="open" x-cloak>Chiudi</span>
+            </button>
+            <div x-show="open" x-cloak style="margin-top:12px;">
+                <x-video-upload-form :lesson="$lesson" :video-ai-dpa-missing="$videoAiDpaMissing" />
+            </div>
+        </div>
+    </div>
+
     {{-- V1 — Video narrato: copione (draft) dalla presentazione PUBBLICATA. UI minima. --}}
     @if($lesson->generation_status === 'ready' && $published)
         @php $lessonVideo = $lesson->videos()->where('presentation_id', $published->id)->latest()->first(); @endphp
@@ -294,11 +352,17 @@
             </div>
 
             <template x-if="s === 'generating'">
-                <p style="margin-top:8px; font-size:0.82rem; color:#E28A53;">Generazione del copione in corso… la pagina si aggiorna da sola.</p>
+                <div style="margin-top:10px; padding:10px 14px; background:#FBF3E2; border-left:4px solid #E28A53; border-radius:6px; display:flex; align-items:center; gap:10px; color:#9A6B2E; font-size:0.85rem; font-weight:600;">
+                    <span style="width:11px;height:11px;border-radius:50%;background:#E28A53;display:inline-block;animation:pulse 1s infinite;"></span>
+                    <span>Generazione video in corso (sintesi voce + montaggio MP4)… richiede qualche minuto, la pagina si aggiorna da sola.</span>
+                </div>
             </template>
 
-            @if(($lessonVideo?->status ?? null) === 'failed' && ($lessonVideo->generation_meta['failure_reason'] ?? null))
-                <p style="margin-top:8px; font-size:0.82rem; color:#A8521F;">{{ $lessonVideo->generation_meta['failure_reason'] }}</p>
+            @if(($lessonVideo?->status ?? null) === 'failed')
+                <div style="margin-top:10px; padding:10px 14px; background:#FDECE2; border-left:4px solid #A8521F; border-radius:6px; color:#A8521F; font-size:0.82rem;">
+                    &#10007; <strong>Generazione video fallita.</strong>@if($lessonVideo->generation_meta['failure_reason'] ?? null) {{ $lessonVideo->generation_meta['failure_reason'] }}@endif
+                    <div style="margin-top:4px; color:#8A9696; font-size:0.75rem;">Risolvi la causa e premi «{{ ($lessonVideo?->status ?? null) === 'ready' ? 'Rigenera video' : 'Genera video' }}» per riprovare.</div>
+                </div>
             @endif
 
             <div style="margin-top:12px;" x-show="s !== 'generating'">
@@ -462,6 +526,31 @@
 @endPushOnce
 @push('scripts')
 <script>
+// Riga materiale: se "in coda"/"in elaborazione", il polling aggiorna il badge da
+// solo e, a estrazione finita, ricarica (per abilitare "Componi lezione").
+function materialRow(id, initial) {
+    const MAP = {pending:['#8A9696','in coda'],processing:['#E28A53','in elaborazione'],ready:['#3A8C89','pronto'],failed:['#A8521F','fallito']};
+    return {
+        status: initial,
+        label() { return (MAP[this.status] || ['#8A9696', this.status])[1]; },
+        color() { return (MAP[this.status] || ['#8A9696'])[0]; },
+        init() { if (this.status === 'pending' || this.status === 'processing') this.poll(); },
+        poll() {
+            const timer = setInterval(async () => {
+                try {
+                    const r = await fetch(`/docente/materiali/${id}/stato`, {headers: {'X-Requested-With':'XMLHttpRequest'}});
+                    const d = await r.json();
+                    this.status = d.status;
+                    if (d.status === 'ready' || d.status === 'failed') {
+                        clearInterval(timer);
+                        window.location.reload(); // ricalcola "Componi lezione"
+                    }
+                } catch (e) {}
+            }, 4000);
+        },
+    };
+}
+
 function lessonStatus(id, initial) {
     return {
         status: initial,

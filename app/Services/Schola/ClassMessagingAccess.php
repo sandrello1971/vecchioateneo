@@ -103,6 +103,27 @@ class ClassMessagingAccess
         return [$conversation, $message, $isNew];
     }
 
+    /**
+     * BROADCAST docente → tutti gli studenti attivi: apre/riusa il thread privato
+     * 1:1 di ciascuno e vi accoda lo stesso messaggio. Ogni studente resta in un
+     * thread separato (risponde SOLO al docente, mai ai compagni). Ritorna il numero
+     * di studenti raggiunti.
+     */
+    public function broadcastThread(SchoolClass $class, Student $teacher, string $subject, string $body): int
+    {
+        $students = $this->activeStudentsOf($class);
+        foreach ($students as $student) {
+            [$conversation, $message, $isNew] = $this->openThread(
+                $class, $student->id, $teacher->id, $teacher, $subject, $body
+            );
+            if ($isNew) {
+                $this->notifyNewThread($conversation, $message, recipientIsTeacher: false);
+            }
+        }
+
+        return $students->count();
+    }
+
     /** Email all'altro partecipante alla creazione del thread (mirror corsi). */
     public function notifyNewThread(ClassConversation $conversation, ClassMessage $message, bool $recipientIsTeacher): void
     {

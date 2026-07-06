@@ -148,20 +148,28 @@ class LessonVideoController extends Controller
         $video = $this->currentVideo($lesson);
         abort_unless($video && $video->status === 'ready', 422, 'Genera prima il video.');
 
+        // Indicizzazione per la RICERCA dentro il video: best-effort, NON blocca la
+        // pubblicazione (il video è comunque riproducibile). Se fallisce, si può
+        // reindicizzare dopo (pulsante Pubblica/Rigenera).
+        $indexWarning = null;
         if (!$video->indexed_at || !$video->video_ai_id) {
             try {
                 $indexer->indexGenerated($video);
                 $video->refresh();
             } catch (\Throwable $e) {
-                return redirect()->route('docente.lessons.show', $lesson)
-                    ->with('error', 'Pubblicazione annullata: indicizzazione non riuscita (' . $e->getMessage() . '). Il video resta in bozza.');
+                \Log::warning('[schola] indicizzazione video lezione fallita, pubblico comunque', ['video' => $video->id, 'error' => $e->getMessage()]);
+                $indexWarning = $e->getMessage();
             }
         }
 
         $video->update(['published_at' => now()]);
 
-        return redirect()->route('docente.lessons.show', $lesson)
-            ->with('success', 'Video pubblicato e indicizzato: visibile agli studenti e ricercabile.');
+        return redirect()->route('docente.lessons.show', $lesson)->with(
+            $indexWarning ? 'warning' : 'success',
+            $indexWarning
+                ? 'Video pubblicato: visibile agli studenti. La ricerca dentro il video non è ancora disponibile (indicizzazione non riuscita: ' . $indexWarning . ').'
+                : 'Video pubblicato e indicizzato: visibile agli studenti e ricercabile.'
+        );
     }
 
     /** V4 — ritira il video (non più visibile agli studenti). */

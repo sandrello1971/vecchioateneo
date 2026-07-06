@@ -65,6 +65,15 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Audit di operazioni manuali/admin (es. sostituzioni di brand): SEMPRE
+        // registrato a prescindere da LOG_LEVEL dell'app. File dedicato e separato.
+        'audit' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/audit.log'),
+            'level' => 'info',
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),
