@@ -105,6 +105,18 @@
                 </div>
 
                 <div>
+                    <label style="font-size:0.8rem; font-weight:600; color:#4A5252; display:block; margin-bottom:6px;">Modalità di erogazione</label>
+                    @php $curMod = old('modality', $course->modality); @endphp
+                    <select name="modality"
+                            style="width:100%; padding:10px 14px; border:1px solid #C8D0D0; border-radius:8px; font-size:0.875rem; outline:none;">
+                        <option value="" @selected($curMod===null || $curMod==='')>Non impostata (contano tutte le ore)</option>
+                        <option value="async" @selected($curMod==='async')>Asincrono (FAD) — contano le ore sui moduli</option>
+                        <option value="sync" @selected($curMod==='sync')>Sincrono (aula/webinar) — contano le presenze alle sessioni</option>
+                    </select>
+                    <p style="font-size:0.72rem; color:#8A9696; margin-top:4px;">Determina come si calcolano le ore nel registro di frequenza.</p>
+                </div>
+
+                <div>
                     <label style="font-size:0.8rem; font-weight:600; color:#4A5252; display:block; margin-bottom:6px;">Certificazione</label>
                     <input type="text" name="certification_name" value="{{ old('certification_name', $course->certification_name) }}"
                            style="width:100%; padding:10px 14px; border:1px solid #C8D0D0; border-radius:8px; font-size:0.875rem; outline:none;">

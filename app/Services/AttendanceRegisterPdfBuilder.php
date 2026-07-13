@@ -45,6 +45,7 @@ class AttendanceRegisterPdfBuilder
         $pdf->SetTextColor(90, 90, 90);
         $totHours = $course->duration_hours ? $course->duration_hours . 'h previste' : '';
         $meta = trim(implode('  ·  ', array_filter([
+            'Modalità: ' . $course->modalityLabel(),
             $totHours,
             'Iscritti: ' . $rows->count(),
             'Emesso il ' . Carbon::now()->locale('it')->isoFormat('D MMMM YYYY'),

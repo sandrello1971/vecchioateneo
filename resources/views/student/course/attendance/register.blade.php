@@ -12,11 +12,20 @@
             <h2 style="font-size:1.25rem; font-weight:700; color:#1A1F1F; margin-top:4px;">Registro di frequenza</h2>
         </div>
         <div style="display:flex; gap:8px;">
+            @unless($course->isAsync())
             <a href="{{ route('student.course.sessions.index', $course->slug) }}" style="padding:8px 14px; border:1px solid #55B1AE; color:#55B1AE; border-radius:6px; font-size:0.8rem; font-weight:600; text-decoration:none;">Sessioni</a>
+            @endunless
             <a href="{{ route('student.course.register.pdf', $course->slug) }}" style="padding:8px 14px; background:#55B1AE; color:white; border-radius:6px; font-size:0.8rem; font-weight:600; text-decoration:none;">Scarica PDF</a>
         </div>
     </div>
-    <p style="color:#6B7280; font-size:0.85rem; margin-bottom:18px;"><strong>Sincrono</strong> = sessioni in aula/online; <strong>FAD</strong> = tempo reale tracciato sui moduli asincroni.</p>
+    <div style="margin-bottom:12px;">
+        <span style="display:inline-block; padding:3px 10px; border-radius:999px; font-size:0.72rem; font-weight:700; background:#E8F5F5; color:#3A8C89;">Modalità: {{ $course->modalityLabel() }}</span>
+    </div>
+    <p style="color:#6B7280; font-size:0.85rem; margin-bottom:18px;"><strong>Sincrono</strong> = presenze alle sessioni; <strong>FAD</strong> = tempo reale sui moduli.
+        @if($course->isAsync()) Il <strong>totale</strong> conta solo le ore <strong>FAD</strong>.
+        @elseif($course->isSync()) Il <strong>totale</strong> conta solo le <strong>presenze</strong>.
+        @else Il <strong>totale</strong> somma entrambi. @endif
+    </p>
 
     @if($rows->isEmpty())
         <div style="padding:32px; text-align:center; background:#F7F9F9; border-radius:8px; color:#6B7280;">Nessun discente iscritto.</div>

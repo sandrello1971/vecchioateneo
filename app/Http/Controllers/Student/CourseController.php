@@ -332,11 +332,15 @@ class CourseController extends Controller
 
         // Gate FAD: si può completare solo dopo aver seguito il modulo per la
         // frazione minima della sua durata (tempo reale tracciato dall'heartbeat).
-        $progress = StudentModuleProgress::where('student_id', $student->id)
-            ->where('module_id', $module->id)->first();
-        if (!$attendance->minCompletionReached($progress, $module)) {
-            $req = (int) ceil($attendance->requiredSeconds($module) / 60);
-            return back()->with('error', "Per completare il modulo devi seguirlo per almeno {$req} minuti.");
+        // Nei corsi SINCRONI (aula/webinar) il gate non si applica: la presenza è
+        // quella in aula, i materiali online non devono bloccare il completamento.
+        if (!$course->isSync()) {
+            $progress = StudentModuleProgress::where('student_id', $student->id)
+                ->where('module_id', $module->id)->first();
+            if (!$attendance->minCompletionReached($progress, $module)) {
+                $req = (int) ceil($attendance->requiredSeconds($module) / 60);
+                return back()->with('error', "Per completare il modulo devi seguirlo per almeno {$req} minuti.");
+            }
         }
 
         StudentModuleProgress::updateOrCreate(

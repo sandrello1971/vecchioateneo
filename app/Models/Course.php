@@ -14,8 +14,12 @@ class Course extends Model
         'name', 'slug', 'description', 'short_description', 'color',
         'icon', 'duration_hours', 'certification_name', 'is_active', 'sort_order',
         'video_ai_id', 'video_filename', 'video_status',
-        'exam_prep_html',
+        'exam_prep_html', 'modality',
     ];
+
+    /** Modalità di erogazione: governa il calcolo delle ore nel registro. */
+    public const MODALITY_ASYNC = 'async'; // FAD asincrona → contano le ore FAD
+    public const MODALITY_SYNC = 'sync';   // aula/webinar → contano le presenze
 
     protected $casts = [
         'is_active' => 'boolean',
@@ -86,6 +90,28 @@ class Course extends Model
     public function hasMultipleInstructors(): bool
     {
         return $this->instructors()->count() > 1;
+    }
+
+    /** Corso FAD asincrono: nel registro contano solo le ore FAD. */
+    public function isAsync(): bool
+    {
+        return $this->modality === self::MODALITY_ASYNC;
+    }
+
+    /** Corso in aula/webinar: nel registro contano solo le presenze alle sessioni. */
+    public function isSync(): bool
+    {
+        return $this->modality === self::MODALITY_SYNC;
+    }
+
+    /** Etichetta leggibile della modalità di erogazione. */
+    public function modalityLabel(): string
+    {
+        return match ($this->modality) {
+            self::MODALITY_ASYNC => 'Asincrono (FAD)',
+            self::MODALITY_SYNC => 'Sincrono (aula/webinar)',
+            default => 'Non impostata',
+        };
     }
 
     public function sessions()

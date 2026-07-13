@@ -27,7 +27,9 @@
     {{-- Registro di frequenza --}}
     <div style="display:flex; gap:10px; margin-bottom:20px;">
         <a href="{{ route('admin.courses.register', $course) }}" style="padding:10px 16px; background:#55B1AE; color:white; border-radius:8px; font-size:0.85rem; text-decoration:none; font-weight:600;">Registro di frequenza</a>
+        @unless($course->isAsync())
         <a href="{{ route('admin.courses.sessions.index', $course) }}" style="padding:10px 16px; border:1px solid #55B1AE; color:#55B1AE; border-radius:8px; font-size:0.85rem; text-decoration:none; font-weight:600;">Sessioni sincrone</a>
+        @endunless
     </div>
 
     {{-- Descrizione --}}

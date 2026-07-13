@@ -218,7 +218,7 @@ class AttendanceService
         $records = AttendanceRecord::where('course_id', $course->id)->get();
         $byStudent = $records->groupBy('student_id');
 
-        return $course->students()->orderBy('name')->get()->map(function (Student $student) use ($byStudent) {
+        return $course->students()->orderBy('name')->get()->map(function (Student $student) use ($byStudent, $course) {
             $recs = $byStudent->get($student->id, collect());
             $sync = round((float) $recs->where('type', 'sync_session')->sum('hours_credited'), 2);
             $async = round((float) $recs->where('source', 'module_completion')->sum('hours_credited'), 2);
@@ -227,12 +227,27 @@ class AttendanceService
                 'student'           => $student,
                 'sync_hours'        => $sync,
                 'async_hours'       => $async,
-                'total_hours'       => round($sync + $async, 2),
+                // Il TOTALE dipende dalla modalità del corso: async → solo FAD,
+                // sync → solo presenze, non impostata → entrambi (storico).
+                'total_hours'       => $this->countedHours($course, $sync, $async),
                 'sessions_attended' => $recs->where('source', 'instructor_mark')->count(),
                 'modules_completed' => $recs->where('source', 'module_completion')->count(),
                 'last_activity'     => $recs->max('occurred_at'),
             ];
         })->values();
+    }
+
+    /** Ore che concorrono al totale in base alla modalità di erogazione del corso. */
+    public function countedHours(Course $course, float $sync, float $async): float
+    {
+        if ($course->isAsync()) {
+            return round($async, 2);
+        }
+        if ($course->isSync()) {
+            return round($sync, 2);
+        }
+
+        return round($sync + $async, 2);
     }
 
     /**
