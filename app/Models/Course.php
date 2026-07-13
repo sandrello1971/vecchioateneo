@@ -88,6 +88,16 @@ class Course extends Model
         return $this->instructors()->count() > 1;
     }
 
+    public function sessions()
+    {
+        return $this->hasMany(CourseSession::class);
+    }
+
+    public function attendanceRecords()
+    {
+        return $this->hasMany(AttendanceRecord::class);
+    }
+
     public function conceptMaps()
     {
         return $this->hasMany(CourseConceptMap::class)->orderBy('sort_order')->orderBy('created_at');

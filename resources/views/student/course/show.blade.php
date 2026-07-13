@@ -36,6 +36,10 @@
     @if(!empty($teaching))
     <div style="background:#E8F5F5; border:1px solid #C8D0D0; border-left:4px solid #E28A53; border-radius:8px; padding:12px 16px; margin-bottom:16px; color:#5A6464; font-size:0.85rem; line-height:1.5;">
         👁 <strong style="color:#1A1F1F;">Modalità docenza</strong> — Stai vedendo il corso come lo vede il discente. Avanzamento, quiz e certificato non vengono registrati. Usa "Aggiungi nota" per preparare la lezione.
+        <div style="margin-top:10px; display:flex; gap:8px;">
+            <a href="{{ route('student.course.register', $course->slug) }}" style="padding:7px 13px; background:#55B1AE; color:white; border-radius:6px; font-size:0.8rem; font-weight:600; text-decoration:none;">Registro di frequenza</a>
+            <a href="{{ route('student.course.sessions.index', $course->slug) }}" style="padding:7px 13px; border:1px solid #55B1AE; color:#55B1AE; border-radius:6px; font-size:0.8rem; font-weight:600; text-decoration:none;">Sessioni sincrone</a>
+        </div>
     </div>
     @endif
 

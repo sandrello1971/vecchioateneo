@@ -15,11 +15,14 @@ class StudentModuleProgress extends Model
     protected $fillable = [
         'student_id', 'module_id', 'status',
         'started_at', 'completed_at', 'time_spent_minutes',
+        'tracked_seconds', 'last_heartbeat_at',
     ];
 
     protected $casts = [
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
+        'last_heartbeat_at' => 'datetime',
+        'tracked_seconds' => 'integer',
     ];
 
     public function student()

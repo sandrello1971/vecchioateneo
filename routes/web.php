@@ -94,8 +94,22 @@ Route::prefix('learn')->name('student.')->group(function () {
         // Trasparenza (§8.1): informativa "l'attività di studio è visibile al docente"
         Route::view('/info/studio-condiviso', 'student.classi.trasparenza')->name('schola.transparency');
         Route::get('/course/{course:slug}', [App\Http\Controllers\Student\CourseController::class, 'show'])->name('course.show');
+
+        // Registro di frequenza lato FORMATORE (gate: insegna il corso).
+        Route::get('/course/{course:slug}/sessions', [App\Http\Controllers\Student\CourseAttendanceController::class, 'sessions'])->name('course.sessions.index');
+        Route::get('/course/{course:slug}/sessions/create', [App\Http\Controllers\Student\CourseAttendanceController::class, 'createSession'])->name('course.sessions.create');
+        Route::post('/course/{course:slug}/sessions', [App\Http\Controllers\Student\CourseAttendanceController::class, 'storeSession'])->name('course.sessions.store');
+        Route::get('/course/{course:slug}/sessions/{session}', [App\Http\Controllers\Student\CourseAttendanceController::class, 'showSession'])->name('course.sessions.show');
+        Route::post('/course/{course:slug}/sessions/{session}/mark', [App\Http\Controllers\Student\CourseAttendanceController::class, 'mark'])->name('course.sessions.mark');
+        Route::delete('/course/{course:slug}/sessions/{session}', [App\Http\Controllers\Student\CourseAttendanceController::class, 'destroySession'])->name('course.sessions.destroy');
+        Route::get('/course/{course:slug}/register', [App\Http\Controllers\Student\CourseAttendanceController::class, 'register'])->name('course.register');
+        Route::get('/course/{course:slug}/register/pdf', [App\Http\Controllers\Student\CourseAttendanceController::class, 'registerPdf'])->name('course.register.pdf');
+        Route::get('/course/{course:slug}/register/{student}', [App\Http\Controllers\Student\CourseAttendanceController::class, 'studentDetail'])->name('course.register.student');
+
         Route::get('/course/{course:slug}/module/{module}', [App\Http\Controllers\Student\CourseController::class, 'module'])->name('module.show');
         Route::post('/course/{course:slug}/module/{module}/complete', [App\Http\Controllers\Student\CourseController::class, 'completeModule'])->name('module.complete');
+        // Registro di frequenza FAD: heartbeat di presenza sul modulo.
+        Route::post('/course/{course:slug}/module/{module}/heartbeat', [App\Http\Controllers\Student\CourseController::class, 'heartbeat'])->name('module.heartbeat')->middleware('throttle:60,1');
         Route::get('/course/{course:slug}/module/{module}/canvas/{canvas}', [App\Http\Controllers\Student\CourseController::class, 'canvas'])->name('module.canvas');
         // Blocco B — presentazione .pptx del modulo (corsista): solo la pubblicata.
         Route::get('/course/{course:slug}/module/{module}/presentazione/download', [App\Http\Controllers\Student\CourseController::class, 'presentationDownload'])->name('module.presentation.download');
@@ -592,6 +606,18 @@ Route::prefix('admin')->name('admin.')->middleware(['admin.auth'])->group(functi
 
     Route::post('upload-image', [App\Http\Controllers\Admin\AdminDashboardController::class, 'uploadImage'])->name('upload-image');
     Route::post('courses/{course}/generate-quiz', [App\Http\Controllers\Admin\CourseController::class, 'generateQuiz'])->name('courses.generate-quiz');
+
+    // Registro di frequenza — sessioni sincrone + prospetto ore (sync + FAD).
+    Route::get('courses/{course}/sessions', [App\Http\Controllers\Admin\CourseSessionController::class, 'index'])->name('courses.sessions.index');
+    Route::get('courses/{course}/sessions/create', [App\Http\Controllers\Admin\CourseSessionController::class, 'create'])->name('courses.sessions.create');
+    Route::post('courses/{course}/sessions', [App\Http\Controllers\Admin\CourseSessionController::class, 'store'])->name('courses.sessions.store');
+    Route::get('courses/{course}/sessions/{session}', [App\Http\Controllers\Admin\CourseSessionController::class, 'show'])->name('courses.sessions.show');
+    Route::post('courses/{course}/sessions/{session}/mark', [App\Http\Controllers\Admin\CourseSessionController::class, 'mark'])->name('courses.sessions.mark');
+    Route::patch('courses/{course}/sessions/{session}', [App\Http\Controllers\Admin\CourseSessionController::class, 'update'])->name('courses.sessions.update');
+    Route::delete('courses/{course}/sessions/{session}', [App\Http\Controllers\Admin\CourseSessionController::class, 'destroy'])->name('courses.sessions.destroy');
+    Route::get('courses/{course}/register', [App\Http\Controllers\Admin\AttendanceRegisterController::class, 'course'])->name('courses.register');
+    Route::get('courses/{course}/register/pdf', [App\Http\Controllers\Admin\AttendanceRegisterController::class, 'coursePdf'])->name('courses.register.pdf');
+    Route::get('courses/{course}/register/{student}', [App\Http\Controllers\Admin\AttendanceRegisterController::class, 'student'])->name('courses.register.student');
 
     // Firma digitale certificati — solo legale rappresentante.
     // Le route batch/* sono dichiarate PRIMA di {certificate}/... per

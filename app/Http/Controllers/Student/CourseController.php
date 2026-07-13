@@ -10,6 +10,7 @@ use App\Models\Quiz;
 use App\Models\QuizAttempt;
 use App\Models\Student;
 use App\Models\StudentModuleProgress;
+use App\Services\AttendanceService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -79,7 +80,7 @@ class CourseController extends Controller
         ));
     }
 
-    public function module(Course $course, Module $module)
+    public function module(Course $course, Module $module, AttendanceService $attendance)
     {
         $student = $this->checkAccess($course);
         abort_unless($module->course_id === $course->id, 404);
@@ -99,6 +100,9 @@ class CourseController extends Controller
             if ($progress->status === 'not_started') {
                 $progress->update(['status' => 'in_progress', 'started_at' => now()]);
             }
+
+            // Registro di frequenza: traccia l'accesso al modulo (debounce nel service).
+            $attendance->logModuleAccess($student, $course, $module, request()->ip());
         }
 
         // P29 Fase 3 — il PDF generato sostituisce i materials DOCUMENTALI (pdf/docx);
@@ -313,7 +317,7 @@ class CourseController extends Controller
         ]);
     }
 
-    public function completeModule(Course $course, Module $module)
+    public function completeModule(Course $course, Module $module, AttendanceService $attendance)
     {
         $student = $this->checkAccess($course);
         abort_unless($module->course_id === $course->id, 404);
@@ -326,12 +330,41 @@ class CourseController extends Controller
             return back()->with('info', 'Modalità docenza: il completamento non viene registrato.');
         }
 
+        // Gate FAD: si può completare solo dopo aver seguito il modulo per la
+        // frazione minima della sua durata (tempo reale tracciato dall'heartbeat).
+        $progress = StudentModuleProgress::where('student_id', $student->id)
+            ->where('module_id', $module->id)->first();
+        if (!$attendance->minCompletionReached($progress, $module)) {
+            $req = (int) ceil($attendance->requiredSeconds($module) / 60);
+            return back()->with('error', "Per completare il modulo devi seguirlo per almeno {$req} minuti.");
+        }
+
         StudentModuleProgress::updateOrCreate(
             ['student_id' => $student->id, 'module_id' => $module->id],
             ['status' => 'completed', 'completed_at' => now()]
         );
 
+        // Registro di frequenza: accredita le ore di questo modulo (una sola volta).
+        $attendance->creditModuleCompletion($student, $course, $module);
+
         return back()->with('success', 'Modulo completato!');
+    }
+
+    /**
+     * Heartbeat di presenza FAD: il client pinga mentre il discente è sul modulo;
+     * il server accredita solo il tempo reale trascorso (cap anti-frode).
+     */
+    public function heartbeat(Course $course, Module $module, AttendanceService $attendance)
+    {
+        $student = $this->checkAccess($course);
+        abort_unless($module->course_id === $course->id, 404);
+
+        // Demo e modalità docenza non concorrono al registro di frequenza.
+        if ($student->is_demo || $this->isTeachingMode($student, $course)) {
+            return response()->json(['tracked_seconds' => 0, 'can_complete' => true]);
+        }
+
+        return response()->json($attendance->heartbeat($student, $module));
     }
 
     public function canvas(Course $course, Module $module, string $canvas)

@@ -911,4 +911,30 @@ function anchoredNotes(opts) {
 </script>
 @endpush
 
+@push('scripts')
+{{-- Registro di frequenza FAD: heartbeat di presenza. Pinga solo mentre la tab è
+     attiva; il server accredita il tempo reale (cap anti-frode). --}}
+<script>
+(function () {
+    const url = "{{ url()->current() }}/heartbeat";
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+    if (!csrf) return;
+    let inFlight = false;
+    async function ping() {
+        if (document.visibilityState !== 'visible' || inFlight) return;
+        inFlight = true;
+        try {
+            await fetch(url, { method: 'POST', headers: { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' } });
+        } catch (e) { /* silenzioso: la presenza non deve disturbare la fruizione */ }
+        inFlight = false;
+    }
+    ping();                                   // primo ping: imposta il riferimento
+    setInterval(ping, 30000);                 // poi ogni 30s se la tab è attiva
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') ping();
+    });
+})();
+</script>
+@endpush
+
 @endsection
