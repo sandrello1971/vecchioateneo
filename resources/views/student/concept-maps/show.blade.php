@@ -12,7 +12,7 @@
 
 @section('content')
 <div style="max-width:1100px;">
-    <a href="{{ route('student.course.concept-map.index', $course->slug) }}" style="color:#8A9696; font-size:0.85rem;">&larr; Mappe del corso</a>
+    <a href="{{ route('student.course.concept-maps.index', $course->slug) }}" style="color:#8A9696; font-size:0.85rem;">&larr; Mappe del corso</a>
     <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-top:4px;">
         <div style="flex:1;">
             <h1 style="font-size:1.4rem; font-weight:700; color:#1A1F1F;">{{ $map->title }}</h1>
