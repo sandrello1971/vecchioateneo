@@ -780,9 +780,39 @@
                 La mappa è in <strong>bozza</strong>: i discenti non la vedono finché non la pubblichi.
             </p>
             @endif
+
+            {{-- Anteprima inline del grafo (sola lettura), senza aprire l'editor --}}
+            @if($moduleConceptMap && $moduleConceptMap->ai_generated && !empty($moduleConceptMap->data['nodes']))
+            <div style="margin-top:16px;">
+                <div style="font-size:0.72rem; color:#8A9696; margin-bottom:6px; font-weight:600;">Anteprima</div>
+                <div id="module-conceptmap-preview" style="height:480px; border:1px solid #E5E7E7; border-radius:8px; background:#FAFBFB; overflow:hidden;"></div>
+            </div>
+            @endif
         @endif
     </div>
 </div>
+
+{{-- Anteprima mappa concettuale del modulo (vis-network, sola lettura) --}}
+@if($moduleConceptMap && $moduleConceptMap->ai_generated && !empty($moduleConceptMap->data['nodes']))
+@push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/vis-network@9.1.9/standalone/umd/vis-network.min.js"></script>
+<script src="/js/concept-map-editor.js?v={{ filemtime(public_path('js/concept-map-editor.js')) }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const el = document.getElementById('module-conceptmap-preview');
+    if (!el) return;
+    const CM = window.GlitchConceptMap || window.NosciteConceptMap;
+    if (!CM) { el.innerHTML = '<div style="padding:30px;text-align:center;color:#8A9696">Viewer non disponibile.</div>'; return; }
+    const initial = @json($moduleConceptMap->data);
+    if (!initial || !initial.nodes || !initial.nodes.length) {
+        el.innerHTML = '<div style="padding:30px;text-align:center;color:#8A9696">Nessun dato.</div>';
+        return;
+    }
+    CM.createViewer('#module-conceptmap-preview', initial, {});
+});
+</script>
+@endpush
+@endif
 
 {{-- Markmap renderer per anteprima admin --}}
 @if($module->hasMindmap())
