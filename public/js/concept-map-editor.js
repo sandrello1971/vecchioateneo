@@ -133,9 +133,22 @@
         var editable = opts.editable !== false;
         var graph = normalizeGraph(initialData);
 
+        // Se i nodi hanno GIÀ posizioni salvate (mappa disposta a mano e salvata),
+        // NON rifare il layout con la fisica: la ri-simulazione ignorerebbe le x/y
+        // salvate e mostrerebbe un layout diverso (editor e anteprima). La fisica
+        // auto-layout serve solo alle mappe nuove (AI) che nascono senza posizioni.
+        var hasSavedLayout = graph.nodes.length > 0 && graph.nodes.every(function (n) {
+            return typeof n.x === 'number' && typeof n.y === 'number';
+        });
+
+        var netOptions = buildOptions(editable);
+        if (hasSavedLayout) {
+            netOptions.physics = { enabled: false };
+        }
+
         var nodesDS = new window.vis.DataSet(graph.nodes);
         var edgesDS = new window.vis.DataSet(graph.edges);
-        var network = new window.vis.Network(container, { nodes: nodesDS, edges: edgesDS }, buildOptions(editable));
+        var network = new window.vis.Network(container, { nodes: nodesDS, edges: edgesDS }, netOptions);
 
         // Fit iniziale + auto-fit dopo stabilizzazione physics + auto-fit su resize
         function safeFit() {
@@ -146,6 +159,9 @@
             try { network.setOptions({ physics: { enabled: false } }); } catch (e) {}
             safeFit();
         });
+        // Con layout salvato la fisica è già spenta → stabilizationIterationsDone non
+        // scatta: fit esplicito subito così la mappa è centrata.
+        if (hasSavedLayout) { setTimeout(safeFit, 50); }
         // Backup: alcune browser/layout non triggerano stabilizationIterationsDone
         // se il container ha ancora dimensione 0 all'init.
         setTimeout(safeFit, 250);
