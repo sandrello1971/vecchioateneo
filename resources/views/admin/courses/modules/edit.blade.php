@@ -697,6 +697,93 @@
     </div>
 </div>
 
+{{-- ==================== MAPPA CONCETTUALE (livello modulo, come la mindmap) ==================== --}}
+<div style="max-width:900px; margin:20px auto 40px;">
+    <div style="background:white; border-radius:12px; padding:24px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+            <div>
+                <h3 style="font-size:1rem; font-weight:700; color:#1A1F1F;">🕸️ Mappa concettuale</h3>
+                <p style="font-size:0.78rem; color:#8A9696; margin-top:2px;">
+                    Concetti e loro relazioni, generati da Claude dal contenuto del modulo. Resta in bozza finché non la pubblichi.
+                </p>
+            </div>
+            <div style="display:flex; gap:6px;">
+                @if($moduleConceptMap)
+                    @if($moduleConceptMap->isPublished())
+                    <span style="display:inline-block; background:rgba(85,177,174,0.15); color:#3A8C89; padding:4px 10px; border-radius:10px; font-size:0.7rem; font-weight:700;">✓ PUBBLICATA</span>
+                    @else
+                    <span style="display:inline-block; background:rgba(138,150,150,0.18); color:#5A6464; padding:4px 10px; border-radius:10px; font-size:0.7rem; font-weight:700;">✎ BOZZA</span>
+                    @endif
+                    @if($moduleConceptMap->isStale())
+                    <span style="display:inline-block; background:rgba(226,138,83,0.15); color:#D87840; padding:4px 10px; border-radius:10px; font-size:0.7rem; font-weight:700;">⚠ OBSOLETA</span>
+                    @endif
+                @endif
+            </div>
+        </div>
+
+        @if($moduleConceptMap && $moduleConceptMap->ai_generated)
+            <div style="font-size:0.75rem; color:#8A9696; margin-bottom:12px;">
+                Generata: <strong>{{ $moduleConceptMap->ai_generated_at?->format('d/m/Y H:i') ?? '—' }}</strong>
+                — {{ count($moduleConceptMap->data['nodes'] ?? []) }} concetti, {{ count($moduleConceptMap->data['edges'] ?? []) }} relazioni.
+                @if($moduleConceptMap->isStale())
+                    <span style="color:#D87840; margin-left:8px;">— il contenuto del modulo è cambiato dopo la generazione, rigenera per allineare.</span>
+                @endif
+            </div>
+        @endif
+
+        @if(empty($module->content))
+            <div style="background:#FBE9E7; border-left:4px solid #E28A53; padding:12px 14px; border-radius:6px; color:#7A4A20; font-size:0.85rem;">
+                Il modulo non ha contenuto. Salva prima il contenuto qui sopra, poi torna qui per generare la mappa concettuale.
+            </div>
+        @else
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                {{-- Genera / Rigenera --}}
+                <form method="POST" action="{{ route('admin.courses.modules.conceptmap.generate', [$course, $module]) }}" style="display:inline;"
+                      onsubmit="this.querySelector('button').innerHTML='⏳ Generazione in corso (~20s)...'; this.querySelector('button').disabled=true;">
+                    @csrf
+                    <button type="submit" style="padding:9px 18px; background:#55B1AE; color:white; border:none; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">
+                        @if($moduleConceptMap && $moduleConceptMap->ai_generated) 🔄 Rigenera @else ✨ Genera mappa concettuale @endif
+                    </button>
+                </form>
+
+                @if($moduleConceptMap && $moduleConceptMap->ai_generated)
+                    {{-- Pubblica / Rimetti in bozza --}}
+                    <form method="POST" action="{{ route('admin.courses.modules.conceptmap.visibility', [$course, $module]) }}" style="display:inline;">
+                        @csrf
+                        @method('PATCH')
+                        <input type="hidden" name="visibility" value="{{ $moduleConceptMap->isPublished() ? 'draft' : 'published' }}">
+                        <button type="submit" style="padding:9px 18px; background:white; border:1px solid #55B1AE; color:#3A8C89; border-radius:8px; font-size:0.85rem; font-weight:600; cursor:pointer;">
+                            @if($moduleConceptMap->isPublished()) 🙈 Rimetti in bozza @else 🚀 Pubblica @endif
+                        </button>
+                    </form>
+
+                    {{-- Editor completo (modifica nodi/archi) --}}
+                    <a href="{{ route('admin.courses.concept-maps.edit', [$course, $moduleConceptMap]) }}"
+                       style="padding:9px 18px; background:white; border:1px solid #C8D0D0; color:#4A5252; border-radius:8px; font-size:0.85rem; font-weight:600; text-decoration:none;">
+                        ✎ Apri editor completo
+                    </a>
+
+                    {{-- Elimina --}}
+                    <form method="POST" action="{{ route('admin.courses.modules.conceptmap.destroy', [$course, $module]) }}" style="display:inline; margin-left:auto;"
+                          onsubmit="return confirm('Eliminare la mappa concettuale? Potrai rigenerarla in seguito.');">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" style="padding:9px 14px; background:white; border:1px solid #E28A53; color:#D87840; border-radius:8px; font-size:0.8rem; font-weight:600; cursor:pointer;">
+                            🗑 Elimina
+                        </button>
+                    </form>
+                @endif
+            </div>
+
+            @if($moduleConceptMap && $moduleConceptMap->ai_generated && !$moduleConceptMap->isPublished())
+            <p style="font-size:0.75rem; color:#8A9696; margin-top:12px; font-style:italic;">
+                La mappa è in <strong>bozza</strong>: i discenti non la vedono finché non la pubblichi.
+            </p>
+            @endif
+        @endif
+    </div>
+</div>
+
 {{-- Markmap renderer per anteprima admin --}}
 @if($module->hasMindmap())
 @push('scripts')

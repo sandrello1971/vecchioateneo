@@ -465,6 +465,10 @@ Route::prefix('admin')->name('admin.')->middleware(['admin.auth'])->group(functi
     // Mappe mentali moduli (Claude API generated, markmap-compatible)
     Route::post('courses/{course}/modules/{module}/mindmap/generate', [App\Http\Controllers\Admin\ModuleMindMapController::class, 'generate'])->name('courses.modules.mindmap.generate');
     Route::patch('courses/{course}/modules/{module}/mindmap', [App\Http\Controllers\Admin\ModuleMindMapController::class, 'update'])->name('courses.modules.mindmap.update');
+    // Mappa concettuale a livello modulo (inline nel modulo, come la mindmap).
+    Route::post('courses/{course}/modules/{module}/conceptmap/generate', [App\Http\Controllers\Admin\ModuleConceptMapController::class, 'generate'])->name('courses.modules.conceptmap.generate');
+    Route::patch('courses/{course}/modules/{module}/conceptmap/visibility', [App\Http\Controllers\Admin\ModuleConceptMapController::class, 'setVisibility'])->name('courses.modules.conceptmap.visibility');
+    Route::delete('courses/{course}/modules/{module}/conceptmap', [App\Http\Controllers\Admin\ModuleConceptMapController::class, 'destroy'])->name('courses.modules.conceptmap.destroy');
 
     // Presentazione .pptx modulo (P28) — generatore condiviso, pattern async
     Route::post('courses/{course}/modules/{module}/presentation/generate', [App\Http\Controllers\Admin\ModulePresentationController::class, 'generate'])->name('courses.modules.presentation.generate');

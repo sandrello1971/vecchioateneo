@@ -48,7 +48,9 @@ class ModuleController extends Controller
     public function edit(Course $course, Module $module)
     {
         $module->load('materials');
-        return view('admin.courses.modules.edit', compact('course', 'module'));
+        $moduleConceptMap = $course->conceptMaps()->where('module_id', $module->id)->first();
+
+        return view('admin.courses.modules.edit', compact('course', 'module', 'moduleConceptMap'));
     }
 
     public function update(Request $request, Course $course, Module $module)
